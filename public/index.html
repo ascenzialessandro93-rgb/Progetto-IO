@@ -4,58 +4,126 @@
     <meta charset="UTF-8">
     <title>Pirate RTS .io</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #006994; }
+        body { margin: 0; overflow: hidden; background: #006994; font-family: Arial, sans-serif; }
         canvas { display: block; background: #0077be; }
+        
+        /* Stile semplicissimo per la Lobby/Menu */
+        #lobbyUI {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8); padding: 30px; border-radius: 10px;
+            text-align: center; color: white; box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        #lobbyUI input { padding: 10px; width: 200px; border: none; border-radius: 5px; margin-bottom: 15px; font-size: 16px; }
+        #lobbyUI button { padding: 10px 20px; background: #e67e22; border: none; border-radius: 5px; color: white; font-size: 16px; cursor: pointer; font-weight: bold; }
+        #lobbyUI button:hover { background: #d35400; }
     </style>
 </head>
 <body>
 
-    <canvas id="gameCanvas"></canvas>
+    <div id="lobbyUI">
+        <h2>SOLCA I MARI ARRR!</h2>
+        <input type="text" id="usernameInput" placeholder="Nome Capitano..." maxlength="15"><br>
+        <button id="startButton">SALPA!</button>
+    </div>
+
+    <canvas id="gameCanvas" style="display:none;"></canvas>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
-        const socket = io(); // Si connette automaticamente all'host corrente
+        const socket = io();
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+        const lobbyUI = document.getElementById('lobbyUI');
+        const startButton = document.getElementById('startButton');
 
         let localPlayers = {};
+        let localIslands = [];
+        let myId = null;
 
-        // Sincronizza lo stato locale con quello del server
-        socket.on('updatePlayers', (serverPlayers) => {
-            localPlayers = serverPlayers;
+        // Gestione Accesso Gioco
+        startButton.addEventListener('click', () => {
+            const name = document.getElementById('usernameInput').value;
+            lobbyUI.style.display = 'none';
+            canvas.style.display = 'block';
+            
+            // Ridimensiona il canvas
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            
+            myId = socket.id;
+            socket.emit('joinGame', name);
         });
 
-        // Cattura il click del mouse (Comando RTS: Muovi flotta qui)
+        // Ricezione Dati
+        socket.on('initIslands', (islands) => { localIslands = islands; });
+        socket.on('updatePlayers', (serverPlayers) => { localPlayers = serverPlayers; });
+
+        // Invio comando di movimento (calcolando la posizione nel mondo reale, non dello schermo)
         window.addEventListener('click', (e) => {
-            socket.emit('moveCommand', { x: e.clientX, y: e.clientY });
+            if (!localPlayers[socket.id]) return;
+            
+            // Calcolo dove ha cliccato il giocatore nel mondo di gioco tenendo conto della telecamera
+            const myShip = localPlayers[socket.id];
+            const worldX = e.clientX - canvas.width / 2 + myShip.x;
+            const worldY = e.clientY - canvas.height / 2 + myShip.y;
+            
+            socket.emit('moveCommand', { x: worldX, y: worldY });
         });
 
-        // Ciclo di rendering (Disegna la grafica a 60 FPS)
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            for (let id in localPlayers) {
-                const player = localPlayers[id];
+            if (localPlayers[socket.id]) {
+                const myShip = localPlayers[socket.id];
                 
-                // Disegna temporaneamente la nave come un cerchio colorato
-                ctx.fillStyle = player.color;
-                ctx.beginPath();
-                ctx.arc(player.x, player.y, 20, 0, Math.PI * 2);
-                ctx.fill();
-                
-                // Testo identificativo sopra la nave
-                ctx.fillStyle = '#fff';
-                ctx.font = '14px Arial';
-                ctx.fillText(id === socket.id ? "La tua Flotta" : "Nemico", player.x - 25, player.y - 30);
+                // Sistema di Telecamera: Trasla tutto il disegno centrando la mia nave
+                ctx.save();
+                ctx.translate(canvas.width / 2 - myShip.x, canvas.height / 2 - myShip.y);
+
+                // Disegna i Confini della Mappa (2000x2000)
+                ctx.strokeStyle = "rgba(255, 0, 0, 0.5)";
+                ctx.lineWidth = 5;
+                ctx.strokeRect(0, 0, 2000, 2000);
+
+                // Disegna le Isole
+                ctx.fillStyle = '#dbaf79'; // Colore sabbia
+                for (let island of localIslands) {
+                    ctx.beginPath();
+                    ctx.arc(island.x, island.y, island.radius, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Bordo verde dell'isola (vegetazione)
+                    ctx.strokeStyle = '#27ae60';
+                    ctx.lineWidth = 4;
+                    ctx.stroke();
+                }
+
+                // Disegna i Giocatori
+                for (let id in localPlayers) {
+                    const player = localPlayers[id];
+                    
+                    ctx.fillStyle = player.color;
+                    ctx.beginPath();
+                    ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Nome del capitano
+                    ctx.fillStyle = '#fff';
+                    ctx.font = 'bold 14px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(player.name, player.x, player.y - player.radius - 10);
+                }
+
+                ctx.restore(); // Ripristina la telecamera
             }
 
             requestAnimationFrame(draw);
         }
-
         draw();
+
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
     </script>
 </body>
 </html>

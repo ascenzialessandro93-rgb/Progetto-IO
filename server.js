@@ -3,51 +3,105 @@ const app = express();
 const http = require('http').createServer(app);
 const io = require('socket.io')(http);
 
-// Dice a Express di servire i file statici dalla cartella 'public'
 app.use(express.static('public'));
 
-// Stato globale del gioco (memorizzato in RAM sul server)
+// Configurazione Mondo di Gioco
+const MAP_SIZE = 2000; 
 const players = {};
+const islands = [];
+
+// Generazione randomica delle isole (Eseguita una volta all'avvio)
+function generateIslands() {
+    for (let i = 0; i < 15; i++) {
+        islands.push({
+            id: i,
+            x: Math.random() * (MAP_SIZE - 200) + 100,
+            y: Math.random() * (MAP_SIZE - 200) + 100,
+            radius: Math.random() * 60 + 30 // Dimensioni piccole/medie
+        });
+    }
+}
+generateIslands();
 
 io.on('connection', (socket) => {
-    console.log(`Un pirata si è unito alla ciurma: ${socket.id}`);
+    console.log(`Pirata connesso: ${socket.id}`);
 
-    // Configurazione iniziale del giocatore e della sua flotta
-    players[socket.id] = {
-        id: socket.id,
-        x: Math.random() * 800,
-        y: Math.random() * 600,
-        color: `hsl(${Math.random() * 360}, 70%, 50%)`, // Colore casuale per la flotta
-        ships: [
-            { type: 'flagship', x: 0, y: 0, hp: 100 }
-        ]
-    };
+    // Il giocatore viene creato solo DOPO aver inserito il nome nel menu
+    socket.on('joinGame', (username) => {
+        players[socket.id] = {
+            id: socket.id,
+            name: username || "Anonimo",
+            x: Math.random() * (MAP_SIZE - 100) + 50,
+            y: Math.random() * (MAP_SIZE - 100) + 50,
+            targetX: null,
+            targetY: null,
+            speed: 4,
+            radius: 20, // Raggio di collisione della nave
+            color: `hsl(${Math.random() * 360}, 70%, 50%)`
+        };
+        // Invia i dati delle isole solo al giocatore che è appena entrato
+        socket.emit('initIslands', islands);
+    });
 
-    // Invia i dati aggiornati a tutti i giocatori
-    io.emit('updatePlayers', players);
-
-    // Riceve i comandi di movimento (click sul terreno dell'RTS)
     socket.on('moveCommand', (target) => {
         if (players[socket.id]) {
-            // Aggiornamento immediato (Sostituire in futuro con fisica/accelerazione)
-            players[socket.id].x = target.x;
-            players[socket.id].y = target.y;
-            
-            // Invia le nuove posizioni a tutti
-            io.emit('updatePlayers', players);
+            players[socket.id].targetX = target.x;
+            players[socket.id].targetY = target.y;
         }
     });
 
-    // Gestione della disconnessione
     socket.on('disconnect', () => {
-        console.log(`Un pirata ha abbandonato la flotta: ${socket.id}`);
         delete players[socket.id];
-        io.emit('updatePlayers', players);
     });
 });
 
-// Porta dinamica richiesta dalle piattaforme di hosting
+// --- GAME LOOP DEL SERVER (30 Volte al secondo) ---
+setInterval(() => {
+    for (let id in players) {
+        const p = players[id];
+        if (p.targetX !== null && p.targetY !== null) {
+            // Calcolo della distanza dal target
+            const dx = p.targetX - p.x;
+            const dy = p.targetY - p.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance > 5) { // Se è abbastanza lontano dal punto di click, si muove
+                // Memorizza la posizione precedente in caso di collisione
+                const prevX = p.x;
+                const prevY = p.y;
+
+                // Calcolo vettore di movimento fluido
+                p.x += (dx / distance) * p.speed;
+                p.y += (dy / distance) * p.speed;
+
+                // 1. Collisione con i bordi della mappa
+                if (p.x < 0 || p.x > MAP_SIZE) p.x = prevX;
+                if (p.y < 0 || p.y > MAP_SIZE) p.y = prevY;
+
+                // 2. Collisione con le Isole (Cerchio contro Cerchio)
+                for (let island of islands) {
+                    const idx = p.x - island.x;
+                    const idy = p.y - island.y;
+                    const distIsland = Math.sqrt(idx * idx + idy * idy);
+                    
+                    // Se la distanza è minore della somma dei due raggi -> COLLISIONE
+                    if (distIsland < p.radius + island.radius) {
+                        p.x = prevX;
+                        p.y = prevY;
+                        p.targetX = null; // Ferma la nave
+                        p.targetY = null;
+                        break;
+                    }
+                }
+            } else {
+                p.targetX = null;
+                p.targetY = null;
+            }
+        }
+    }
+    // Invia lo stato globale aggiornato a tutti i client
+    io.emit('updatePlayers', players);
+}, 1000 / 30);
+
 const PORT = process.env.PORT || 3000;
-http.listen(PORT, () => {
-    console.log(`Arrr! Il server è salpato sulla porta ${PORT}`);
-});
+http.listen(PORT, () => console.log(`Server online sulla porta ${PORT}`));
