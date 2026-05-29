@@ -14,10 +14,10 @@ const resources = [];
 let npcIdCounter = 0;
 let resourceIdCounter = 0;
 
-// Variabili globali per Cicli ed Eventi dinamici
 let globalTicks = 0;
 let isNight = false;
 let specialTreasure = null;
+let kraken = null; // Il Boss PvE
 
 const UPGRADES = {
     hp_size: { maxLevel: 4, costs: [50, 150, 300, 600],  hp: [100, 150, 200, 300, 500], radius: [25, 28, 32, 38, 45] },
@@ -26,7 +26,6 @@ const UPGRADES = {
     speed:   { maxLevel: 3, costs: [80, 200, 400],       spd: [4.5, 5.2, 6.0, 7.5] }
 };
 
-// Generazione Isole Irregolari
 function generateIslands() {
     let attempts = 0;
     while (islands.length < 50 && attempts < 1000) {
@@ -34,6 +33,8 @@ function generateIslands() {
         const baseR = Math.random() * 150 + 100;
         const x = Math.random() * (MAP_SIZE - baseR * 3) + baseR * 1.5;
         const y = Math.random() * (MAP_SIZE - baseR * 3) + baseR * 1.5;
+        // Evitiamo isole al centro esatto per fare spazio al Kraken
+        if (Math.hypot(x - MAP_SIZE/2, y - MAP_SIZE/2) < 600) continue; 
 
         let overlap = false;
         for (let is of islands) {
@@ -45,7 +46,6 @@ function generateIslands() {
             const numPoints = 16;
             const points = [];
             let maxR = 0;
-            
             for (let i = 0; i < numPoints; i++) {
                 const angle = (i / numPoints) * Math.PI * 2;
                 const r = baseR + (Math.random() * 80 - 40);
@@ -58,28 +58,23 @@ function generateIslands() {
 }
 generateIslands();
 
-// Generazione Risorse Naturali (Relitti e Casse)
 function spawnResource() {
-    const r = 20;
-    const x = Math.random() * (MAP_SIZE - 400) + 200;
-    const y = Math.random() * (MAP_SIZE - 400) + 200;
     resources.push({
         id: 'res_' + resourceIdCounter++,
-        x, y, radius: r, amount: 200
+        x: Math.random() * (MAP_SIZE - 400) + 200, 
+        y: Math.random() * (MAP_SIZE - 400) + 200, 
+        radius: 20, amount: 200
     });
 }
 for(let i = 0; i < 40; i++) spawnResource();
 
-// Funzione modulare per gestire la collisione e lo scivolamento sulle coste
 function handleIslandCollisions(entity) {
     for (let is of islands) {
         const dx = entity.x - is.x; const dy = entity.y - is.y;
         const dist = Math.sqrt(dx*dx + dy*dy);
-        
         if (dist < is.maxR + entity.radius) {
             let angleToCenter = Math.atan2(dy, dx);
             if (angleToCenter < 0) angleToCenter += Math.PI * 2;
-            
             let islandR = is.maxR;
             for (let i = 0; i < is.points.length; i++) {
                 let next = (i + 1) % is.points.length;
@@ -88,16 +83,11 @@ function handleIslandCollisions(entity) {
                     break;
                 }
             }
-
             if (dist < islandR + entity.radius) {
                 const pushDist = (islandR + entity.radius) - dist;
                 entity.x += Math.cos(angleToCenter) * pushDist;
                 entity.y += Math.sin(angleToCenter) * pushDist;
-                
-                // Se è un NPC e sbatte contro un'isola, corregge la rotta per non bloccarsi
-                if (entity.id && entity.id.toString().startsWith('npc_')) {
-                    entity.angle += Math.PI / 4;
-                }
+                if (entity.id && entity.id.toString().startsWith('npc_')) entity.angle += Math.PI / 4;
             }
         }
     }
@@ -105,31 +95,21 @@ function handleIslandCollisions(entity) {
 
 io.on('connection', (socket) => {
     socket.on('joinGame', (data) => {
-        let username = "Capitano";
-        let crewTag = "";
+        let username = (data.username || "Capitano").trim();
+        let crewTag = (data.crew || "").trim().toUpperCase();
         
-        if (data && typeof data === 'object') {
-            username = data.username || "Capitano";
-            crewTag = (data.crew || "").trim().toUpperCase();
-        } else if (typeof data === 'string') {
-            username = data;
-        }
+        // Notifica globale nuovo giocatore
+        io.emit('chatMessage', { sender: 'SISTEMA', text: `${username} è sceso in mare!`, type: 'system' });
 
         players[socket.id] = {
-            id: socket.id, name: username, crew: crewTag,
+            id: socket.id, name: username, crew: crewTag, shipClass: null,
             x: Math.random() * (MAP_SIZE - 400) + 200, y: Math.random() * (MAP_SIZE - 400) + 200,
-            targetX: null, targetY: null, angle: 0,
-            isDead: false, gold: 0, lastShotTime: 0,
+            targetX: null, targetY: null, angle: 0, isDead: false, gold: 0, lastShotTime: 0,
             upg: { hp_size: 0, damage: 0, cannons: 0, speed: 0 },
             hp: UPGRADES.hp_size.hp[0], maxHp: UPGRADES.hp_size.hp[0],
             radius: UPGRADES.hp_size.radius[0], speed: UPGRADES.speed.spd[0],
             cannonCount: UPGRADES.cannons.count[0], damage: UPGRADES.damage.dmg[0],
-            color: `hsl(${Math.random() * 360}, 70%, 50%)`,
-            skills: {
-                speedBoost: { activeUntil: 0 },
-                repair: { cd: 0 },
-                smokeScreen: { activeUntil: 0 }
-            }
+            skills: { speedBoost: { activeUntil: 0 }, repair: { cd: 0 }, smokeScreen: { activeUntil: 0 } }
         };
         socket.emit('initIslands', islands);
     });
@@ -142,20 +122,31 @@ io.on('connection', (socket) => {
 
     socket.on('shootCommand', () => {
         const p = players[socket.id];
-        if (p && !p.isDead && Date.now() - p.lastShotTime >= 2500) {
+        if (p && !p.isDead && Date.now() - p.lastShotTime >= 2000) {
             p.lastShotTime = Date.now();
-            const cps = p.cannonCount / 2;
+            let cps = p.cannonCount / 2;
+            
+            // Logica specifica per la classe
+            if (p.shipClass === 'galleon') cps += 1; 
+
             for(let i=0; i<cps; i++) {
                 const offset = (i - (cps-1)/2) * 15; 
                 const createBullet = (dirOffset) => {
                     bullets.push({
                         id: Math.random(), playerId: socket.id, crew: p.crew, dmg: p.damage,
                         x: p.x + Math.cos(p.angle) * offset, y: p.y + Math.sin(p.angle) * offset,
-                        vx: Math.cos(p.angle + dirOffset) * 12, vy: Math.sin(p.angle + dirOffset) * 12, life: 40
+                        vx: Math.cos(p.angle + dirOffset) * 14, vy: Math.sin(p.angle + dirOffset) * 14, life: 40
                     });
                 };
-                createBullet(Math.PI / 2);  
-                createBullet(-Math.PI / 2); 
+                
+                if (p.shipClass === 'clipper') {
+                    // Clipper spara prevalentemente in avanti
+                    createBullet(Math.PI/16 * (Math.random()-0.5)); 
+                } else {
+                    // Sparo laterale classico
+                    createBullet(Math.PI / 2);  
+                    createBullet(-Math.PI / 2); 
+                }
             }
         }
     });
@@ -166,14 +157,11 @@ io.on('connection', (socket) => {
         const now = Date.now();
 
         if (skillType === 'speed' && (!p.skills.speedBoost.cd || p.skills.speedBoost.cd <= now)) {
-            p.skills.speedBoost.activeUntil = now + 4000; 
-            p.skills.speedBoost.cd = now + 12000;        
+            p.skills.speedBoost.activeUntil = now + 4000; p.skills.speedBoost.cd = now + 12000;        
         } else if (skillType === 'repair' && (!p.skills.repair.cd || p.skills.repair.cd <= now)) {
-            p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.3); 
-            p.skills.repair.cd = now + 15000;              
+            p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.3); p.skills.repair.cd = now + 15000;              
         } else if (skillType === 'smoke' && (!p.skills.smokeScreen.cd || p.skills.smokeScreen.cd <= now)) {
-            p.skills.smokeScreen.activeUntil = now + 3000; 
-            p.skills.smokeScreen.cd = now + 18000;         
+            p.skills.smokeScreen.activeUntil = now + 3000; p.skills.smokeScreen.cd = now + 18000;         
         }
     });
 
@@ -184,49 +172,84 @@ io.on('connection', (socket) => {
             if (currentLevel < UPGRADES[type].maxLevel) {
                 const cost = UPGRADES[type].costs[currentLevel];
                 if (p.gold >= cost) {
-                    p.gold -= cost;
-                    p.upg[type]++;
+                    p.gold -= cost; p.upg[type]++;
                     if(type === 'hp_size') { p.maxHp = UPGRADES.hp_size.hp[p.upg[type]]; p.hp = p.maxHp; p.radius = UPGRADES.hp_size.radius[p.upg[type]]; }
                     if(type === 'damage') p.damage = UPGRADES.damage.dmg[p.upg[type]];
                     if(type === 'cannons') p.cannonCount = UPGRADES.cannons.count[p.upg[type]];
                     if(type === 'speed') p.speed = UPGRADES.speed.spd[p.upg[type]];
+                    
+                    // Trigger Evoluzione Classe al Livello Scafo 2
+                    if (type === 'hp_size' && p.upg.hp_size === 2 && !p.shipClass) {
+                        socket.emit('triggerClassSelection');
+                    }
                 }
             }
+        }
+    });
+
+    socket.on('selectClass', (shipClass) => {
+        const p = players[socket.id];
+        if (p && p.upg.hp_size >= 2 && !p.shipClass) {
+            p.shipClass = shipClass;
+            if (shipClass === 'galleon') { p.maxHp *= 1.5; p.hp = p.maxHp; p.speed *= 0.8; p.radius *= 1.2; }
+            if (shipClass === 'clipper') { p.speed *= 1.35; p.maxHp *= 0.8; p.radius *= 0.9; }
+            if (shipClass === 'caravel') { p.speed *= 1.1; p.maxHp *= 1.1; /* Raggio visivo extra gestito sul client */ }
+        }
+    });
+
+    socket.on('chatMessage', (msg) => {
+        const p = players[socket.id];
+        if (!p || p.isDead) return;
+        const text = msg.trim();
+        if (text.startsWith('/crew ') && p.crew) {
+            io.emit('chatMessage', { sender: p.name, text: text.replace('/crew ', ''), type: 'crew', crewTag: p.crew });
+        } else {
+            io.emit('chatMessage', { sender: p.name, text: text, type: 'global', crewTag: p.crew });
         }
     });
 
     socket.on('disconnect', () => { delete players[socket.id]; });
 });
 
-// Loop di fisica ed eventi ambientali (30fps)
 setInterval(() => {
     globalTicks++;
     const now = Date.now();
 
-    // Gestione Ciclo Giorno / Notte (Cambia ogni ~60 secondi)
-    if (globalTicks % 1800 === 0) {
-        isNight = !isNight;
+    // Ciclo Giorno/Notte
+    if (globalTicks % 1800 === 0) isNight = !isNight;
+
+    // Boss PvE: Il Kraken
+    if (globalTicks % 4000 === 0 && !kraken) {
+        kraken = { id: 'kraken', x: MAP_SIZE/2, y: MAP_SIZE/2, hp: 6000, maxHp: 6000, radius: 100, angle: 0 };
+        io.emit('chatMessage', { sender: 'SISTEMA', text: '🦑 IL KRAKEN È EMERSO AL CENTRO DELLA MAPPA!', type: 'system' });
     }
 
-    // Evento Dinamico: Tesoro del Capitano (Nasce ogni ~100 secondi se raccolto)
+    if (kraken) {
+        kraken.angle += 0.015;
+        // Il kraken spara in 8 direzioni a ondate
+        if (globalTicks % 60 === 0) {
+            for(let i=0; i<8; i++) {
+                bullets.push({
+                    id: Math.random(), playerId: 'kraken', crew: null, dmg: 40,
+                    x: kraken.x, y: kraken.y, vx: Math.cos(kraken.angle + i*Math.PI/4)*8, vy: Math.sin(kraken.angle + i*Math.PI/4)*8, life: 80
+                });
+            }
+        }
+    }
+
     if (!specialTreasure && globalTicks % 3000 === 0) {
-        specialTreasure = {
-            x: Math.random() * (MAP_SIZE - 2000) + 1000,
-            y: Math.random() * (MAP_SIZE - 2000) + 1000,
-            radius: 45, goldValue: 500
-        };
+        specialTreasure = { x: Math.random() * (MAP_SIZE - 2000) + 1000, y: Math.random() * (MAP_SIZE - 2000) + 1000, radius: 45, goldValue: 500 };
     }
 
-    // Gestione IA e Spawning NPC
-    if (Object.keys(npcs).length < 30) {
+    // IA NPCs
+    if (Object.keys(npcs).length < 25) {
         let isPirate = Math.random() > 0.6;
         let id = 'npc_' + npcIdCounter++;
         npcs[id] = {
             id, type: isPirate ? 'pirate' : 'merchant',
             x: Math.random() * (MAP_SIZE-600) + 300, y: Math.random() * (MAP_SIZE-600) + 300, angle: Math.random() * Math.PI*2,
             speed: isPirate ? 4 : 2.5, radius: isPirate ? 25 : 35,
-            hp: isPirate ? 150 : 250, maxHp: isPirate ? 150 : 250, isDead: false, goldValue: isPirate ? 40 : 100,
-            lastShotTime: 0, damage: 20
+            hp: isPirate ? 150 : 250, maxHp: isPirate ? 150 : 250, isDead: false, goldValue: isPirate ? 40 : 100, damage: 20
         };
     }
 
@@ -234,20 +257,16 @@ setInterval(() => {
         let n = npcs[id];
         n.x += Math.cos(n.angle) * n.speed; n.y += Math.sin(n.angle) * n.speed;
         if (n.x < 100 || n.x > MAP_SIZE - 100 || n.y < 100 || n.y > MAP_SIZE - 100) n.angle += Math.PI;
-
-        // RISOLTO: Ora anche i mercantili ed i pirati controllati dall'IA calcolano lo scivolamento sulle isole
         handleIslandCollisions(n);
     }
 
-    // Gestione Giocatori
+    // Giocatori & Risorse
     for (let id in players) {
         const p = players[id];
         if (p.isDead) continue;
         
         let currentSpeed = p.speed;
-        if (p.skills.speedBoost.activeUntil > now) {
-            currentSpeed *= 1.6; // Moltiplicatore abilità velocità
-        }
+        if (p.skills.speedBoost.activeUntil > now) currentSpeed *= 1.6;
 
         if (p.targetX !== null && p.targetY !== null) {
             const dx = p.targetX - p.x; const dy = p.targetY - p.y;
@@ -263,32 +282,32 @@ setInterval(() => {
 
         handleIslandCollisions(p);
 
-        // Raccolta Risorse Naturali
+        // Raccolta Risorse (RALLENTATA)
         for (let i = resources.length - 1; i >= 0; i--) {
             const res = resources[i];
             const dx = p.x - res.x; const dy = p.y - res.y;
             if (Math.sqrt(dx*dx + dy*dy) < p.radius + res.radius) {
-                p.gold += 1; 
-                res.amount -= 1;
-                if (res.amount <= 0) {
-                    resources.splice(i, 1);
-                    spawnResource();
+                // ESTRAZIONE LENTA: 1 unità d'oro ogni 6 tick (circa 5 oro al secondo)
+                if (globalTicks % 6 === 0) {
+                    p.gold += 1; 
+                    res.amount -= 1;
+                    if (res.amount <= 0) { resources.splice(i, 1); spawnResource(); }
                 }
             }
         }
 
-        // Raccolta scrigno evento dinamico
         if (specialTreasure) {
             const tDx = p.x - specialTreasure.x; const tDy = p.y - specialTreasure.y;
             if (Math.sqrt(tDx*tDx + tDy*tDy) < p.radius + specialTreasure.radius) {
-                p.gold += specialTreasure.goldValue;
-                specialTreasure = null;
+                p.gold += specialTreasure.goldValue; specialTreasure = null;
+                io.emit('chatMessage', { sender: 'SISTEMA', text: `${p.name} ha trovato il Tesoro!`, type: 'system' });
             }
         }
     }
 
-    // Collisioni Avanzate Nave-Nave (Giocatori + NPC)
     const allShips = [...Object.values(players).filter(p => !p.isDead), ...Object.values(npcs)];
+    if (kraken) allShips.push(kraken);
+
     for (let i = 0; i < allShips.length; i++) {
         for (let j = i + 1; j < allShips.length; j++) {
             const s1 = allShips[i]; const s2 = allShips[j];
@@ -299,29 +318,30 @@ setInterval(() => {
             if (distance < minDistance && distance > 0) {
                 const overlap = minDistance - distance;
                 const nx = dx / distance; const ny = dy / distance;
-                s1.x -= nx * (overlap / 2); s1.y -= ny * (overlap / 2);
-                s2.x += nx * (overlap / 2); s2.y += ny * (overlap / 2);
+                if(s1.id !== 'kraken') { s1.x -= nx * (overlap / 2); s1.y -= ny * (overlap / 2); }
+                if(s2.id !== 'kraken') { s2.x += nx * (overlap / 2); s2.y += ny * (overlap / 2); }
             }
         }
     }
 
-    // Proiettili e logica Danni (con Fuoco Amico disattivato per i membri dello stesso Clan)
+    // Proiettili e logica Danni (Invio eventi particellari ai client colpiti)
     for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
         b.x += b.vx; b.y += b.vy; b.life--;
         let hit = false;
 
+        // Hit Players
         for (let pid in players) {
             let p = players[pid];
-            if (!p.isDead && pid !== b.playerId) {
-                // Se i giocatori condividono lo stesso tag ciurma, i colpi passano oltre senza arrecare danno
-                if (b.crew && b.crew === p.crew) continue;
-
+            if (!p.isDead && pid !== b.playerId && !(b.crew && b.crew === p.crew)) {
                 let dx = b.x - p.x; let dy = b.y - p.y;
                 if (Math.sqrt(dx*dx + dy*dy) < p.radius) {
                     p.hp -= b.dmg; hit = true;
+                    io.emit('effect', { type: 'hit', x: b.x, y: b.y, targetId: pid });
                     if (p.hp <= 0) {
                         p.isDead = true;
+                        io.emit('effect', { type: 'explosion', x: p.x, y: p.y });
+                        io.emit('chatMessage', { sender: 'SISTEMA', text: `☠️ ${p.name} è affondato.`, type: 'system' });
                         if(players[b.playerId]) players[b.playerId].gold += 150; 
                         setTimeout(() => { if(players[pid]){ p.hp = p.maxHp; p.isDead = false; p.x = Math.random()*MAP_SIZE; p.y = Math.random()*MAP_SIZE; } }, 4000);
                     }
@@ -330,6 +350,7 @@ setInterval(() => {
             }
         }
 
+        // Hit NPCs / Kraken
         if (!hit) {
             for (let nid in npcs) {
                 let n = npcs[nid];
@@ -337,11 +358,26 @@ setInterval(() => {
                     let dx = b.x - n.x; let dy = b.y - n.y;
                     if (Math.sqrt(dx*dx + dy*dy) < n.radius) {
                         n.hp -= b.dmg; hit = true;
+                        io.emit('effect', { type: 'hit', x: b.x, y: b.y, targetId: nid });
                         if (n.hp <= 0) {
                             if (players[b.playerId]) players[b.playerId].gold += n.goldValue;
+                            io.emit('effect', { type: 'explosion', x: n.x, y: n.y });
                             delete npcs[nid];
                         }
                         break;
+                    }
+                }
+            }
+            if(!hit && kraken && b.playerId !== 'kraken') {
+                let dx = b.x - kraken.x; let dy = b.y - kraken.y;
+                if (Math.sqrt(dx*dx + dy*dy) < kraken.radius) {
+                    kraken.hp -= b.dmg; hit = true;
+                    io.emit('effect', { type: 'hit', x: b.x, y: b.y, color: 'purple' });
+                    if (kraken.hp <= 0) {
+                        if (players[b.playerId]) players[b.playerId].gold += 2500;
+                        io.emit('effect', { type: 'explosion', x: kraken.x, y: kraken.y });
+                        io.emit('chatMessage', { sender: 'SISTEMA', text: '🦑 IL KRAKEN È STATO SCONFITTO!', type: 'system' });
+                        kraken = null;
                     }
                 }
             }
@@ -349,22 +385,13 @@ setInterval(() => {
         if (hit || b.life <= 0) bullets.splice(i, 1);
     }
 
-    // Elaborazione della Leaderboard Real-time (Top 5)
     const leaderboard = Object.values(players)
         .sort((a, b) => b.gold - a.gold)
         .slice(0, 5)
         .map(p => ({ name: p.name, crew: p.crew, gold: p.gold }));
 
-    io.emit('updateState', { 
-        players, 
-        npcs, 
-        bullets, 
-        resources, 
-        isNight, 
-        specialTreasure,
-        leaderboard 
-    });
+    io.emit('updateState', { players, npcs, bullets, resources, isNight, specialTreasure, kraken, leaderboard });
 }, 1000 / 30);
 
 const PORT = process.env.PORT || 3000;
-http.listen(PORT, () => console.log(`Oceano Avanzato online sulla porta ${PORT}`));
+http.listen(PORT, () => console.log(`Corsari.io online sulla porta ${PORT}`));

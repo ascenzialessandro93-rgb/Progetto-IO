@@ -2,98 +2,145 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Pirate RTS .io</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #004a6b; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; }
+        body { margin: 0; overflow: hidden; background: #004a6b; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; -webkit-user-select: none; touch-action: none; }
         canvas { display: block; background: #005a82; }
         
-        #lobbyUI { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(10,10,15,0.95); padding: 40px; border-radius: 12px; text-align: center; color: white; border: 3px solid #f39c12; box-shadow: 0 10px 40px rgba(0,0,0,0.8); z-index: 10; }
-        #lobbyUI input { padding: 12px; width: 250px; font-size: 16px; margin-bottom: 15px; border-radius: 8px; border: none; text-align: center; }
-        #lobbyUI button { padding: 15px 30px; background: #f39c12; border: none; font-weight: bold; font-size: 18px; border-radius: 8px; cursor: pointer; color: #111; transition: 0.2s; width: 100%; }
-        #lobbyUI button:hover { background: #e67e22; transform: scale(1.05); }
-        
-        /* UI DI GIOCO */
-        #gameUI { display: none; position: absolute; bottom: 0; left: 0; width: 100%; height: 110px; background: linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0.6)); border-top: 2px solid #f39c12; display: flex; justify-content: center; align-items: center; gap: 40px; z-index: 5; }
+        /* Effetto Glassmorphism */
+        .glass-panel { background: rgba(10, 15, 25, 0.75); backdrop-filter: blur(8px); border: 1px solid rgba(243, 156, 18, 0.4); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5); border-radius: 12px; color: white; }
+
+        #lobbyUI { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 40px; text-align: center; z-index: 10; width: 320px; }
+        #lobbyUI input { padding: 12px; width: 90%; font-size: 16px; margin-bottom: 15px; border-radius: 8px; border: none; text-align: center; background: rgba(255,255,255,0.9); }
+        #lobbyUI button { padding: 15px 30px; background: #f39c12; border: none; font-weight: bold; font-size: 18px; border-radius: 8px; cursor: pointer; color: #111; transition: 0.2s; width: 100%; margin-bottom: 10px; }
+        #lobbyUI button:hover { background: #e67e22; transform: scale(1.03); }
+
+        #gameUI { display: none; position: absolute; bottom: 0; left: 0; width: 100%; height: 110px; border-top: 2px solid #f39c12; border-radius: 0; display: flex; justify-content: center; align-items: center; gap: 40px; z-index: 5; }
         #statsBox { font-size: 24px; font-weight: bold; color: #f1c40f; display: flex; align-items: center; gap: 10px; background: rgba(0,0,0,0.5); padding: 15px 25px; border-radius: 10px; }
         
-        #shopContainer { display: flex; gap: 15px; }
-        .upg-col { display: flex; flex-direction: column; align-items: center; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); width: 140px; }
-        .upg-title { color: white; font-size: 13px; font-weight: bold; margin-bottom: 8px; text-transform: uppercase; }
-        .buy-btn { background: #27ae60; color: white; border: none; padding: 8px 15px; font-size: 14px; font-weight: bold; border-radius: 5px; cursor: pointer; transition: 0.1s; width: 100%; }
+        #shopContainer { display: flex; gap: 10px; }
+        .upg-col { display: flex; flex-direction: column; align-items: center; background: rgba(255,255,255,0.05); padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); width: 130px; }
+        .upg-title { color: white; font-size: 12px; font-weight: bold; margin-bottom: 8px; text-transform: uppercase; }
+        .buy-btn { background: #27ae60; color: white; border: none; padding: 8px 10px; font-size: 13px; font-weight: bold; border-radius: 5px; cursor: pointer; transition: 0.1s; width: 100%; }
         .buy-btn:hover:not(:disabled) { background: #2ecc71; transform: translateY(-2px); }
         .buy-btn:disabled { background: #555; color: #888; cursor: not-allowed; }
         
-        /* MINIMAPPA */
-        #minimapBox { display: none; position: absolute; top: 20px; right: 20px; width: 180px; height: 180px; background: rgba(0,0,0,0.6); border: 3px solid #f39c12; border-radius: 50%; overflow: hidden; box-shadow: 0 0 20px rgba(0,0,0,0.8); z-index: 5; }
-        #minimapCanvas { width: 100%; height: 100%; }
-        
-        /* BOX CLASSIFICA */
-        #leaderboardBox { display: none; position: absolute; top: 220px; right: 20px; width: 210px; background: rgba(10,10,15,0.85); border: 2px solid #f39c12; border-radius: 8px; padding: 12px; color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); z-index: 5; font-size: 14px; }
+        #minimapBox { display: none; position: absolute; top: 20px; right: 20px; width: 180px; height: 180px; border: 3px solid #f39c12; border-radius: 50%; overflow: hidden; z-index: 5; }
+        #leaderboardBox { display: none; position: absolute; top: 220px; right: 20px; width: 210px; padding: 12px; z-index: 5; font-size: 14px; }
         #leaderboardBox h3 { margin: 0 0 10px 0; font-size: 15px; text-align: center; color: #f39c12; text-transform: uppercase; border-bottom: 1px solid rgba(243,156,18,0.3); padding-bottom: 5px; }
         .lb-entry { display: flex; justify-content: space-between; margin-bottom: 6px; font-weight: 500; }
         
-        /* STRUTTURA BUSSOLA */
-        #compassBox { display: none; position: absolute; top: 20px; left: 20px; width: 65px; height: 65px; border: 3px solid #f39c12; border-radius: 50%; background: rgba(10,10,15,0.85); display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(0,0,0,0.6); z-index: 5; }
+        #compassBox { display: none; position: absolute; top: 20px; left: 20px; width: 65px; height: 65px; border: 3px solid #f39c12; border-radius: 50%; display: flex; align-items: center; justify-content: center; z-index: 5; }
         #compassNeedle { width: 4px; height: 45px; background: linear-gradient(to bottom, #e74c3c 50%, #ecf0f1 50%); border-radius: 2px; transform-origin: center center; }
 
-        /* INTERFACCIA DELLE ABILITÀ ATTIVE */
-        #skillsBox { display: none; position: absolute; bottom: 130px; left: 50%; transform: translateX(-50%); display: flex; gap: 15px; z-index: 5; }
-        .skill-card { background: rgba(10,10,15,0.9); border: 2px solid #f1c40f; border-radius: 8px; width: 85px; padding: 6px; text-align: center; color: white; font-size: 11px; font-weight: bold; }
-        .skill-key { display: block; background: #f1c40f; color: black; border-radius: 3px; font-size: 12px; margin-bottom: 4px; padding: 2px 0; }
+        /* Scelta Classe */
+        #classSelection { display: none; position: absolute; top: 30%; left: 50%; transform: translateX(-50%); text-align: center; padding: 30px; z-index: 20; border: 2px solid #3498db; }
+        #classSelection h2 { color: #3498db; margin-top: 0; }
+        .class-btn { background: #2980b9; padding: 15px; border: none; color: white; margin: 10px; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: bold; width: 150px; }
+        .class-btn:hover { background: #3498db; }
 
-        /* COOLDOWN RICARICA CANNONI */
-        #reloadBar { position: absolute; top: 50%; left: 50%; transform: translate(-50%, 50px); width: 100px; height: 6px; background: rgba(0,0,0,0.5); border-radius: 3px; display: none; z-index: 5; }
-        #reloadFill { width: 0%; height: 100%; background: #f1c40f; border-radius: 3px; transition: width 0.1s linear; }
+        /* Chat System */
+        #chatBox { display: none; position: absolute; bottom: 130px; left: 20px; width: 300px; height: 200px; display: flex; flex-direction: column; z-index: 10; pointer-events: none; }
+        #chatMessages { flex-grow: 1; overflow-y: auto; display: flex; flex-direction: column; justify-content: flex-end; padding-bottom: 10px; }
+        .chat-msg { font-size: 13px; margin-bottom: 4px; text-shadow: 1px 1px 2px black; }
+        .msg-sys { color: #f1c40f; font-weight: bold; }
+        .msg-crew { color: #3498db; }
+        .msg-global { color: #ecf0f1; }
+        #chatInput { display: none; pointer-events: auto; width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #f39c12; background: rgba(0,0,0,0.8); color: white; }
+
+        /* Controlli Mobile */
+        #mobileControls { display: none; position: absolute; bottom: 130px; width: 100%; height: 150px; z-index: 6; pointer-events: none; }
+        #joystickZone { position: absolute; left: 30px; bottom: 10px; width: 120px; height: 120px; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; pointer-events: auto; }
+        #joystickKnob { position: absolute; top: 40px; left: 40px; width: 40px; height: 40px; background: rgba(243,156,18,0.8); border-radius: 50%; }
+        #actionBtns { position: absolute; right: 30px; bottom: 10px; display: flex; gap: 15px; pointer-events: auto; }
+        .mob-btn { width: 60px; height: 60px; border-radius: 50%; background: rgba(231, 76, 60, 0.8); border: 2px solid #c0392b; color: white; font-size: 24px; }
     </style>
 </head>
 <body>
 
-    <div id="lobbyUI">
-        <h1 style="color:#f39c12; margin-top:0; letter-spacing: 2px; font-size: 32px; text-shadow: 0 3px 6px black;">CORSARI .IO</h1>
+    <div id="lobbyUI" class="glass-panel">
+        <h1 style="color:#f39c12; margin-top:0; letter-spacing: 2px; font-size: 36px; text-shadow: 0 3px 6px black;">CORSARI .IO</h1>
         <input type="text" id="usernameInput" placeholder="Scegli il tuo nome..." maxlength="14"><br>
         <input type="text" id="crewInput" placeholder="Tag Ciurma (Es: RM, GOLD)..." maxlength="4"><br>
         <button id="startButton">SALPA LE ANCORE</button>
+        <button id="loginBtn" style="background:#34495e; color:white; font-size:14px; margin-top:10px;">Accedi con Firebase</button>
+        <p id="authStatus" style="font-size:12px; color:#aaa;"></p>
+    </div>
+
+    <div id="classSelection" class="glass-panel">
+        <h2>Evoluzione Scafo Disponibile!</h2>
+        <button class="class-btn" onclick="selectClass('galleon')">Galeone<br><small>Tanti HP, Lento</small></button>
+        <button class="class-btn" onclick="selectClass('clipper')">Clipper<br><small>Veloce, Danni Frontali</small></button>
+        <button class="class-btn" onclick="selectClass('caravel')">Caravella<br><small>Bilanciata, Visibilità</small></button>
     </div>
 
     <canvas id="gameCanvas" style="display:none;"></canvas>
 
-    <div id="compassBox"><div id="compassNeedle"></div></div>
-    <div id="minimapBox"><canvas id="minimapCanvas" width="180" height="180"></canvas></div>
+    <div id="compassBox" class="glass-panel"><div id="compassNeedle"></div></div>
+    <div id="minimapBox" class="glass-panel"><canvas id="minimapCanvas" width="180" height="180"></canvas></div>
     
-    <div id="leaderboardBox">
+    <div id="leaderboardBox" class="glass-panel">
         <h3>Classifica</h3>
         <div id="leaderboardContent"></div>
     </div>
 
-    <div id="skillsBox">
-        <div class="skill-card"><span class="skill-key">[Q]</span>Vento ⛵</div>
-        <div class="skill-card"><span class="skill-key">[E]</span>Ripara 🛠️</div>
-        <div class="skill-card"><span class="skill-key">[R]</span>Fumo 🌫️</div>
+    <div id="chatBox">
+        <div id="chatMessages"></div>
+        <input type="text" id="chatInput" placeholder="Scrivi un messaggio... (Usa /crew per la ciurma)">
     </div>
 
-    <div id="reloadBar"><div id="reloadFill"></div></div>
-
-    <div id="gameUI">
-        <div id="statsBox">💰 <span id="goldAmount">0</span></div>
-        <div id="shopContainer">
-            <div class="upg-col">
-                <span class="upg-title">❤️ Scafo (HP/Misura)</span>
-                <button id="btn_hp_size" class="buy-btn" onclick="buyUpg('hp_size')">LVL UP</button>
-            </div>
-            <div class="upg-col">
-                <span class="upg-title">⚔️ Palle di Cannone</span>
-                <button id="btn_damage" class="buy-btn" onclick="buyUpg('damage')">LVL UP</button>
-            </div>
-            <div class="upg-col">
-                <span class="upg-title">🏴‍☠️ Batterie Cannoni</span>
-                <button id="btn_cannons" class="buy-btn" onclick="buyUpg('cannons')">LVL UP</button>
-            </div>
-            <div class="upg-col">
-                <span class="upg-title">⛵ Vele (Velocità)</span>
-                <button id="btn_speed" class="buy-btn" onclick="buyUpg('speed')">LVL UP</button>
-            </div>
+    <div id="mobileControls">
+        <div id="joystickZone"><div id="joystickKnob"></div></div>
+        <div id="actionBtns">
+            <button id="mobBtnSkill" class="mob-btn" style="background: #3498db; border-color: #2980b9;">💨</button>
+            <button id="mobBtnShoot" class="mob-btn">🔥</button>
         </div>
     </div>
+
+    <div id="gameUI" class="glass-panel">
+        <div id="statsBox">💰 <span id="goldAmount">0</span></div>
+        <div id="shopContainer">
+            <div class="upg-col"><span class="upg-title">❤️ Scafo</span><button id="btn_hp_size" class="buy-btn" onclick="buyUpg('hp_size')">LVL UP</button></div>
+            <div class="upg-col"><span class="upg-title">⚔️ Danni</span><button id="btn_damage" class="buy-btn" onclick="buyUpg('damage')">LVL UP</button></div>
+            <div class="upg-col"><span class="upg-title">🏴‍☠️ Cannoni</span><button id="btn_cannons" class="buy-btn" onclick="buyUpg('cannons')">LVL UP</button></div>
+            <div class="upg-col"><span class="upg-title">⛵ Vele</span><button id="btn_speed" class="buy-btn" onclick="buyUpg('speed')">LVL UP</button></div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        
+        // Inserisci qui le tue credenziali Firebase (le hai già usate in altri progetti per l'Expense Tracker)
+        const firebaseConfig = {
+            apiKey: "INSERISCI_API_KEY",
+            authDomain: "INSERISCI_DOMAIN",
+            projectId: "INSERISCI_PROJECT_ID"
+            // ...
+        };
+        
+        try {
+            const app = initializeApp(firebaseConfig);
+            const auth = getAuth(app);
+            
+            document.getElementById('loginBtn').addEventListener('click', () => {
+                signInAnonymously(auth).then(() => {
+                    document.getElementById('authStatus').innerText = "Autenticato con successo!";
+                    document.getElementById('loginBtn').style.display = 'none';
+                }).catch((error) => console.error(error));
+            });
+
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    document.getElementById('authStatus').innerText = "Account Firebase Collogato.";
+                    document.getElementById('loginBtn').style.display = 'none';
+                }
+            });
+        } catch (e) {
+            console.log("Firebase config in sospeso.");
+        }
+    </script>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
@@ -104,18 +151,18 @@
         const mCtx = mCanvas.getContext('2d');
         
         const MAP_SIZE = 8000;
-        let state = { players: {}, npcs: {}, bullets: [], resources: [], isNight: false, specialTreasure: null, leaderboard: [] };
+        let state = { players: {}, npcs: {}, bullets: [], resources: [], isNight: false, specialTreasure: null, kraken: null, leaderboard: [] };
         let localIslands = [];
+        
+        // Sistemi visivi client-side
+        let particles = [];
+        let screenShake = 0;
+        let isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
 
         const shipSprite = new Image();
         shipSprite.src = 'https://images-wixmp-ed30a86b8c4ca887773594c2.wixmp.com/f/02f7fc23-e1ad-4d3c-bf35-1c3d96f43d92/d68usui-ef6c334e-11b7-4f75-88b9-ecd34c5d4bf0.png?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1cm46YXBwOjdlMGQxODg5ODIyNjQzNzNhNWYwZDQxNWVhMGQyNmUwIiwiaXNzIjoidXJuOmFwcDo3ZTBkMTg4OTgyMjY0MzczYTVmMGQ0MTVlYTBkMjZlMCIsIm9iaiI6W1t7InBhdGgiOiIvZi8wMmY3ZmMyMy1lMWFkLTRkM2MtYmYzNS0xYzNkOTZmNDNkOTIvZDY4dXN1aS1lZjZjMzM0ZS0xMWI3LTRmNzUtODhiOS1lY2QzNGM1ZDRiZjAucG5nIn1dXSwiYXVkIjpbInVybjpzZXJ2aWNlOmZpbGUuZG93bmxvYWQiXX0.3kMXKaqZTAHsDV35EbNLNy4gihS47ZdXmNCv_p0zXAU';
 
-        const UPG_DATA = {
-            hp_size: { max: 4, costs: [50, 150, 300, 600] },
-            damage:  { max: 3, costs: [100, 250, 500] },
-            cannons: { max: 3, costs: [100, 300, 600] },
-            speed:   { max: 3, costs: [80, 200, 400] }
-        };
+        const UPG_DATA = { hp_size: { max: 4, costs: [50, 150, 300, 600] }, damage: { max: 3, costs: [100, 250, 500] }, cannons: { max: 3, costs: [100, 300, 600] }, speed: { max: 3, costs: [80, 200, 400] } };
 
         document.getElementById('startButton').addEventListener('click', () => {
             document.getElementById('lobbyUI').style.display = 'none';
@@ -124,8 +171,10 @@
             document.getElementById('minimapBox').style.display = 'block';
             document.getElementById('leaderboardBox').style.display = 'block';
             document.getElementById('compassBox').style.display = 'flex';
-            document.getElementById('skillsBox').style.display = 'flex';
+            document.getElementById('chatBox').style.display = 'flex';
             
+            if (isMobile) document.getElementById('mobileControls').style.display = 'block';
+
             canvas.width = window.innerWidth; canvas.height = window.innerHeight;
             
             socket.emit('joinGame', {
@@ -135,33 +184,83 @@
         });
 
         window.buyUpg = function(type) { socket.emit('buyUpgrade', type); }
+        window.selectClass = function(c) { socket.emit('selectClass', c); document.getElementById('classSelection').style.display = 'none'; }
+        
+        socket.on('triggerClassSelection', () => { document.getElementById('classSelection').style.display = 'block'; });
 
+        // Gestione Chat
+        const chatInput = document.getElementById('chatInput');
         window.addEventListener('keydown', (e) => { 
-            if (e.code === 'Space') {
-                const p = state.players[socket.id];
-                if(p && Date.now() - p.lastShotTime >= 2500) {
-                    socket.emit('shootCommand');
-                    const rb = document.getElementById('reloadBar');
-                    const rf = document.getElementById('reloadFill');
-                    rb.style.display = 'block'; rf.style.width = '0%';
-                    let prog = 0;
-                    let inter = setInterval(() => {
-                        prog += (100 / 25); rf.style.width = prog + '%';
-                        if(prog >= 100) { clearInterval(inter); rb.style.display = 'none'; }
-                    }, 100);
+            if (e.key === 'Enter') {
+                if (document.activeElement === chatInput) {
+                    if (chatInput.value.trim() !== '') socket.emit('chatMessage', chatInput.value);
+                    chatInput.value = ''; chatInput.style.display = 'none';
+                } else {
+                    chatInput.style.display = 'block'; chatInput.focus();
                 }
             }
-            // Keybinding delle abilità
+            if (document.activeElement === chatInput) return; // Disabilita hotkeys se in chat
+
+            if (e.code === 'Space') { socket.emit('shootCommand'); screenShake = 2; }
             if (e.code === 'KeyQ') socket.emit('useSkill', 'speed');
             if (e.code === 'KeyE') socket.emit('useSkill', 'repair');
             if (e.code === 'KeyR') socket.emit('useSkill', 'smoke');
         });
 
+        socket.on('chatMessage', (data) => {
+            const container = document.getElementById('chatMessages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `chat-msg msg-${data.type}`;
+            const tag = data.crewTag && data.type !== 'system' ? `[${data.crewTag}] ` : "";
+            msgDiv.innerText = `${tag}${data.sender}: ${data.text}`;
+            container.appendChild(msgDiv);
+            if (container.childElementCount > 10) container.removeChild(container.firstChild);
+        });
+
+        // Controlli Mobile
+        if (isMobile) {
+            document.getElementById('mobBtnShoot').addEventListener('touchstart', () => socket.emit('shootCommand'));
+            document.getElementById('mobBtnSkill').addEventListener('touchstart', () => socket.emit('useSkill', 'speed'));
+            
+            const jZone = document.getElementById('joystickZone');
+            const jKnob = document.getElementById('joystickKnob');
+            let jActive = false;
+            
+            jZone.addEventListener('touchstart', (e) => { jActive = true; handleJoystick(e); });
+            jZone.addEventListener('touchmove', (e) => { if(jActive) handleJoystick(e); });
+            jZone.addEventListener('touchend', () => { jActive = false; jKnob.style.top = '40px'; jKnob.style.left = '40px'; });
+            
+            function handleJoystick(e) {
+                const rect = jZone.getBoundingClientRect();
+                const touch = e.touches[0];
+                let x = touch.clientX - rect.left - 60; // 60 is radius
+                let y = touch.clientY - rect.top - 60;
+                const dist = Math.hypot(x, y);
+                if (dist > 40) { x = (x/dist)*40; y = (y/dist)*40; }
+                jKnob.style.left = `${x + 40}px`; jKnob.style.top = `${y + 40}px`;
+                
+                const myShip = state.players[socket.id];
+                if (myShip) socket.emit('moveCommand', { x: myShip.x + x*10, y: myShip.y + y*10 });
+            }
+        }
+
+        // Mouse Move
         window.addEventListener('click', (e) => {
-            if(e.clientY > window.innerHeight - 120) return; 
+            if(e.clientY > window.innerHeight - 120 || isMobile || document.activeElement === chatInput) return; 
             if (!state.players[socket.id] || state.players[socket.id].isDead) return;
             const myShip = state.players[socket.id];
             socket.emit('moveCommand', { x: e.clientX - canvas.width/2 + myShip.x, y: e.clientY - canvas.height/2 + myShip.y });
+        });
+
+        // Effetti Visivi
+        socket.on('effect', (data) => {
+            if (data.type === 'hit') {
+                for(let i=0; i<8; i++) particles.push({ x: data.x, y: data.y, vx: (Math.random()-0.5)*10, vy: (Math.random()-0.5)*10, life: 20, color: data.color || '#e74c3c' });
+                if (data.targetId === socket.id) screenShake = 6;
+            } else if (data.type === 'explosion') {
+                for(let i=0; i<30; i++) particles.push({ x: data.x, y: data.y, vx: (Math.random()-0.5)*15, vy: (Math.random()-0.5)*15, life: 40, color: '#f39c12' });
+                if (Math.hypot(data.x - state.players[socket.id]?.x, data.y - state.players[socket.id]?.y) < 800) screenShake = 10;
+            }
         });
 
         socket.on('initIslands', (islands) => { localIslands = islands; drawMinimapBase(); });
@@ -175,16 +274,10 @@
             for(let key in UPG_DATA) {
                 const btn = document.getElementById('btn_' + key);
                 const lvl = p.upg[key];
-                if (lvl >= UPG_DATA[key].max) {
-                    btn.innerText = "MAX"; btn.disabled = true;
-                } else {
-                    const cost = UPG_DATA[key].costs[lvl];
-                    btn.innerText = `LVL ${lvl+1} (${cost}G)`;
-                    btn.disabled = p.gold < cost;
-                }
+                if (lvl >= UPG_DATA[key].max) { btn.innerText = "MAX"; btn.disabled = true; } 
+                else { const cost = UPG_DATA[key].costs[lvl]; btn.innerText = `LVL ${lvl+1} (${cost}G)`; btn.disabled = p.gold < cost; }
             }
 
-            // Rendering Classifica
             let lbHtml = "";
             if (state.leaderboard) {
                 state.leaderboard.forEach((entry, index) => {
@@ -194,37 +287,25 @@
             }
             document.getElementById('leaderboardContent').innerHTML = lbHtml;
 
-            // RISOLTO: Logica della Bussola orientata perfettamente al centro della mappa
-            const dx = (MAP_SIZE / 2) - p.x;
-            const dy = (MAP_SIZE / 2) - p.y;
-            const angleToCenter = Math.atan2(dy, dx);
+            const angleToCenter = Math.atan2((MAP_SIZE / 2) - p.y, (MAP_SIZE / 2) - p.x);
             document.getElementById('compassNeedle').style.transform = `rotate(${angleToCenter + Math.PI/2}rad)`;
         }
 
         function drawShip(entity, isNpc = false) {
-            // Se un'altra nave usa "Cortina di Fumo" (Stealth), scompare dalla vista degli altri
             const now = Date.now();
-            if (entity.skills && entity.skills.smokeScreen && entity.skills.smokeScreen.activeUntil > now && entity.id !== socket.id) {
-                return;
-            }
+            if (entity.skills && entity.skills.smokeScreen && entity.skills.smokeScreen.activeUntil > now && entity.id !== socket.id) return;
 
             ctx.save();
             ctx.translate(entity.x, entity.y);
-
-            // RISOLTO: Invertito lo sprite di 180° (+ Math.PI) per impedire l'effetto retromarcia
             ctx.rotate(entity.angle + Math.PI/2 + Math.PI); 
 
-            // Scia
             ctx.fillStyle = 'rgba(255,255,255,0.2)';
-            ctx.beginPath(); 
-            ctx.moveTo(0, entity.radius); 
-            ctx.lineTo(-15, entity.radius * 2.5); 
-            ctx.lineTo(15, entity.radius * 2.5); 
-            ctx.fill();
+            ctx.beginPath(); ctx.moveTo(0, entity.radius); ctx.lineTo(-15, entity.radius * 2.5); ctx.lineTo(15, entity.radius * 2.5); ctx.fill();
 
-            // Cannoni fisici
             ctx.fillStyle = '#111';
-            const cps = entity.cannonCount ? entity.cannonCount / 2 : (entity.type === 'pirate' ? 2 : 1);
+            let cps = entity.cannonCount ? entity.cannonCount / 2 : (entity.type === 'pirate' ? 2 : 1);
+            if(entity.shipClass === 'galleon') cps += 1;
+            
             for(let i=0; i<cps; i++) {
                 const off = (i - (cps-1)/2) * 15;
                 ctx.fillRect(-entity.radius - 4, off - 4, 8, 12); 
@@ -232,16 +313,15 @@
             }
 
             const spriteSize = entity.radius * 3.5; 
+            if (entity.id === socket.id && entity.skills?.smokeScreen?.activeUntil > now) ctx.globalAlpha = 0.4;
             
-            // Effetto Trasparenza se siamo noi ad usare la cortina di fumo
-            if (entity.id === socket.id && entity.skills && entity.skills.smokeScreen && entity.skills.smokeScreen.activeUntil > now) {
-                ctx.globalAlpha = 0.4;
-            }
-
+            // Applica una tinta diversa in base alla classe
+            if (entity.shipClass === 'galleon') ctx.filter = 'hue-rotate(90deg)';
+            if (entity.shipClass === 'clipper') ctx.filter = 'hue-rotate(200deg)';
+            
             ctx.drawImage(shipSprite, -spriteSize / 2, -spriteSize / 2, spriteSize, spriteSize);
             ctx.restore();
 
-            // HP e Nomi
             ctx.fillStyle = '#c0392b'; ctx.fillRect(entity.x - 20, entity.y - entity.radius - 20, 40, 6);
             ctx.fillStyle = '#2ecc71'; ctx.fillRect(entity.x - 20, entity.y - entity.radius - 20, (entity.hp / (entity.maxHp||150)) * 40, 6);
             
@@ -249,6 +329,10 @@
             const displayTag = entity.crew ? `[${entity.crew}] ` : "";
             const displayName = isNpc ? (entity.type === 'merchant' ? 'Mercantile AI' : 'Pirata NPC') : displayTag + entity.name;
             ctx.fillText(displayName, entity.x, entity.y - entity.radius - 25); 
+            if (entity.shipClass) {
+                ctx.fillStyle = '#f1c40f'; ctx.font = '10px Arial';
+                ctx.fillText(`(${entity.shipClass})`, entity.x, entity.y - entity.radius - 38);
+            }
         }
 
         let minimapCache = null;
@@ -276,6 +360,11 @@
             if(minimapCache) mCtx.drawImage(minimapCache, 0, 0);
             const scale = 180 / MAP_SIZE;
             
+            if (state.kraken) {
+                mCtx.fillStyle = '#8e44ad';
+                mCtx.beginPath(); mCtx.arc(state.kraken.x * scale, state.kraken.y * scale, 6, 0, Math.PI*2); mCtx.fill();
+            }
+
             for(let id in state.npcs) {
                 mCtx.fillStyle = state.npcs[id].type === 'merchant' ? 'orange' : 'purple';
                 mCtx.fillRect(state.npcs[id].x * scale, state.npcs[id].y * scale, 3, 3);
@@ -285,12 +374,10 @@
                 if(state.players[id].isDead) continue;
                 const p = state.players[id];
                 if (id === socket.id) mCtx.fillStyle = '#2ecc71';
-                else if (myShip && myShip.crew && myShip.crew === p.crew) mCtx.fillStyle = '#3498db'; // Membri ciurma in Azzurro
+                else if (myShip && myShip.crew && myShip.crew === p.crew) mCtx.fillStyle = '#3498db'; 
                 else mCtx.fillStyle = '#e74c3c';
-                
                 mCtx.beginPath(); mCtx.arc(p.x * scale, p.y * scale, id === socket.id ? 4 : 3, 0, Math.PI*2); mCtx.fill();
             }
-
             if (state.specialTreasure) {
                 mCtx.fillStyle = '#f1c40f';
                 mCtx.beginPath(); mCtx.arc(state.specialTreasure.x * scale, state.specialTreasure.y * scale, 5, 0, Math.PI*2); mCtx.fill();
@@ -303,7 +390,17 @@
 
             if (myShip) {
                 ctx.save();
-                ctx.translate(canvas.width / 2 - myShip.x, canvas.height / 2 - myShip.y);
+                
+                // Screen Shake Effect
+                let dxShake = 0, dyShake = 0;
+                if (screenShake > 0) {
+                    dxShake = (Math.random() - 0.5) * screenShake;
+                    dyShake = (Math.random() - 0.5) * screenShake;
+                    screenShake *= 0.9;
+                    if (screenShake < 0.5) screenShake = 0;
+                }
+                
+                ctx.translate(canvas.width / 2 - myShip.x + dxShake, canvas.height / 2 - myShip.y + dyShake);
 
                 // Isole
                 ctx.fillStyle = '#e3bc8d'; ctx.strokeStyle = '#27ae60'; ctx.lineWidth = 12; 
@@ -315,15 +412,16 @@
                         const py = is.y + Math.sin(p.angle) * p.r;
                         if(i===0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
                     }
-                    ctx.closePath();
-                    ctx.fill(); ctx.stroke();
+                    ctx.closePath(); ctx.fill(); ctx.stroke();
                 }
 
-                // Risorse Naturali (Relitti)
+                // Field of View Class
+                let fov = myShip.shipClass === 'caravel' ? 1400 : 1100;
+
+                // Risorse Naturali
                 if (state.resources) {
                     state.resources.forEach(res => {
-                        // Nebbia di guerra client-side (non calcola entità fuori schermo/raggio visivo)
-                        if (Math.hypot(res.x - myShip.x, res.y - myShip.y) > 1100) return;
+                        if (Math.hypot(res.x - myShip.x, res.y - myShip.y) > fov) return;
                         ctx.fillStyle = '#a0522d';
                         ctx.beginPath(); ctx.arc(res.x, res.y, res.radius, 0, Math.PI * 2); ctx.fill();
                         ctx.fillStyle = '#f1c40f';
@@ -331,44 +429,58 @@
                     });
                 }
 
-                // Scrigno dell'evento speciale
+                // Kraken Rendering
+                if (state.kraken && Math.hypot(state.kraken.x - myShip.x, state.kraken.y - myShip.y) <= fov + 200) {
+                    ctx.fillStyle = '#8e44ad';
+                    ctx.beginPath(); ctx.arc(state.kraken.x, state.kraken.y, state.kraken.radius, 0, Math.PI*2); ctx.fill();
+                    // Tentacoli base
+                    for(let i=0; i<8; i++) {
+                        const ta = state.kraken.angle + i*Math.PI/4;
+                        ctx.beginPath(); ctx.moveTo(state.kraken.x, state.kraken.y);
+                        ctx.lineTo(state.kraken.x + Math.cos(ta)*(state.kraken.radius+40), state.kraken.y + Math.sin(ta)*(state.kraken.radius+40));
+                        ctx.lineWidth = 15; ctx.strokeStyle = '#9b59b6'; ctx.stroke();
+                    }
+                    // HP Kraken
+                    ctx.fillStyle = '#c0392b'; ctx.fillRect(state.kraken.x - 50, state.kraken.y - state.kraken.radius - 20, 100, 8);
+                    ctx.fillStyle = '#2ecc71'; ctx.fillRect(state.kraken.x - 50, state.kraken.y - state.kraken.radius - 20, (state.kraken.hp / state.kraken.maxHp) * 100, 8);
+                }
+
                 if (state.specialTreasure) {
                     const res = state.specialTreasure;
-                    ctx.fillStyle = '#d35400';
-                    ctx.fillRect(res.x - res.radius, res.y - res.radius, res.radius*2, res.radius*2);
-                    ctx.fillStyle = '#f1c40f'; ctx.font = 'bold 14px Arial'; ctx.textAlign = 'center';
-                    ctx.fillText("TESORO DEL CAPITANO", res.x, res.y - res.radius - 8);
+                    ctx.fillStyle = '#d35400'; ctx.fillRect(res.x - res.radius, res.y - res.radius, res.radius*2, res.radius*2);
+                    ctx.fillStyle = '#f1c40f'; ctx.font = 'bold 14px Arial'; ctx.textAlign = 'center'; ctx.fillText("TESORO", res.x, res.y - res.radius - 8);
                 }
 
-                // Entità (Giocatori e NPC) filtrate dalla Nebbia di Guerra
                 for (let id in state.npcs) {
-                    if (Math.hypot(state.npcs[id].x - myShip.x, state.npcs[id].y - myShip.y) <= 1100) {
-                        drawShip(state.npcs[id], true);
-                    }
+                    if (Math.hypot(state.npcs[id].x - myShip.x, state.npcs[id].y - myShip.y) <= fov) drawShip(state.npcs[id], true);
                 }
                 for (let id in state.players) { 
-                    if (!state.players[id].isDead && Math.hypot(state.players[id].x - myShip.x, state.players[id].y - myShip.y) <= 1100) {
-                        drawShip(state.players[id], false); 
-                    }
+                    if (!state.players[id].isDead && Math.hypot(state.players[id].x - myShip.x, state.players[id].y - myShip.y) <= fov) drawShip(state.players[id], false); 
                 }
 
-                // Proiettili
+                // Particellari
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    let pt = particles[i];
+                    pt.x += pt.vx; pt.y += pt.vy; pt.life--;
+                    ctx.fillStyle = pt.color; ctx.globalAlpha = Math.max(0, pt.life/40);
+                    ctx.beginPath(); ctx.arc(pt.x, pt.y, Math.max(1, pt.life/8), 0, Math.PI*2); ctx.fill();
+                    ctx.globalAlpha = 1.0;
+                    if(pt.life <= 0) particles.splice(i, 1);
+                }
+
                 ctx.fillStyle = '#222';
                 for (let b of state.bullets) { 
-                    if (Math.hypot(b.x - myShip.x, b.y - myShip.y) <= 1100) {
+                    if (Math.hypot(b.x - myShip.x, b.y - myShip.y) <= fov) {
                         ctx.beginPath(); ctx.arc(b.x, b.y, 5, 0, Math.PI * 2); ctx.fill(); 
                     }
                 }
                 ctx.restore();
                 
-                // RENDERING DEL COPERTURATO DELLA NEBBIA DI GUERRA E CICLO NOTTE
-                const fogGrad = ctx.createRadialGradient(canvas.width/2, canvas.height/2, 450, canvas.width/2, canvas.height/2, 1100);
+                const fogGrad = ctx.createRadialGradient(canvas.width/2, canvas.height/2, fov/2.5, canvas.width/2, canvas.height/2, fov);
                 if (state.isNight) {
-                    fogGrad.addColorStop(0, 'rgba(0, 12, 30, 0.35)');
-                    fogGrad.addColorStop(1, 'rgba(0, 4, 12, 0.96)');
+                    fogGrad.addColorStop(0, 'rgba(0, 12, 30, 0.35)'); fogGrad.addColorStop(1, 'rgba(0, 4, 12, 0.98)');
                 } else {
-                    fogGrad.addColorStop(0, 'rgba(0,0,0,0)');
-                    fogGrad.addColorStop(1, 'rgba(0, 45, 65, 0.88)');
+                    fogGrad.addColorStop(0, 'rgba(0,0,0,0)'); fogGrad.addColorStop(1, 'rgba(0, 45, 65, 0.88)');
                 }
                 ctx.fillStyle = fogGrad;
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -380,7 +492,6 @@
         
         shipSprite.onload = () => { draw(); };
         setTimeout(() => { requestAnimationFrame(draw); }, 1000);
-
         window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
     </script>
 </body>
