@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <title>Pirate RTS .io</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #006994; }
+        canvas { display: block; background: #0077be; }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io(); // Si connette automaticamente all'host corrente
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        let localPlayers = {};
+
+        // Sincronizza lo stato locale con quello del server
+        socket.on('updatePlayers', (serverPlayers) => {
+            localPlayers = serverPlayers;
+        });
+
+        // Cattura il click del mouse (Comando RTS: Muovi flotta qui)
+        window.addEventListener('click', (e) => {
+            socket.emit('moveCommand', { x: e.clientX, y: e.clientY });
+        });
+
+        // Ciclo di rendering (Disegna la grafica a 60 FPS)
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            for (let id in localPlayers) {
+                const player = localPlayers[id];
+                
+                // Disegna temporaneamente la nave come un cerchio colorato
+                ctx.fillStyle = player.color;
+                ctx.beginPath();
+                ctx.arc(player.x, player.y, 20, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Testo identificativo sopra la nave
+                ctx.fillStyle = '#fff';
+                ctx.font = '14px Arial';
+                ctx.fillText(id === socket.id ? "La tua Flotta" : "Nemico", player.x - 25, player.y - 30);
+            }
+
+            requestAnimationFrame(draw);
+        }
+
+        draw();
+    </script>
+</body>
+</html>
