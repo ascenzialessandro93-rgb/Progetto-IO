@@ -12,21 +12,24 @@
         #lobbyUI button { padding: 15px 30px; background: #f39c12; border: none; font-weight: bold; font-size: 18px; border-radius: 8px; cursor: pointer; color: #111; transition: 0.2s; }
         #lobbyUI button:hover { background: #e67e22; transform: scale(1.05); }
         
+        /* UI DI GIOCO */
         #gameUI { display: none; position: absolute; bottom: 0; left: 0; width: 100%; height: 110px; background: linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0.6)); border-top: 2px solid #f39c12; display: flex; justify-content: center; align-items: center; gap: 40px; }
         #statsBox { font-size: 24px; font-weight: bold; color: #f1c40f; display: flex; align-items: center; gap: 10px; background: rgba(0,0,0,0.5); padding: 15px 25px; border-radius: 10px; }
         
+        #shopContainer { display: flex; gap: 15px; }
         .upg-col { display: flex; flex-direction: column; align-items: center; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); width: 140px; }
         .upg-title { color: white; font-size: 13px; font-weight: bold; margin-bottom: 8px; text-transform: uppercase; }
         .buy-btn { background: #27ae60; color: white; border: none; padding: 8px 15px; font-size: 14px; font-weight: bold; border-radius: 5px; cursor: pointer; transition: 0.1s; width: 100%; }
+        .buy-btn:hover:not(:disabled) { background: #2ecc71; transform: translateY(-2px); }
+        .buy-btn:disabled { background: #555; color: #888; cursor: not-allowed; }
         
-        /* BUSSOLA */
-        #compass { position: absolute; top: 20px; left: 20px; width: 60px; height: 60px; border: 3px solid #f39c12; border-radius: 50%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; color: #f1c40f; font-size: 20px; z-index: 10; }
-        #compassNeedle { transition: transform 0.1s; }
-
-        #minimapBox { display: none; position: absolute; top: 20px; right: 20px; width: 200px; height: 200px; background: rgba(0,0,0,0.6); border: 3px solid #f39c12; border-radius: 50%; overflow: hidden; }
+        /* MINIMAPPA */
+        #minimapBox { display: none; position: absolute; top: 20px; right: 20px; width: 200px; height: 200px; background: rgba(0,0,0,0.6); border: 3px solid #f39c12; border-radius: 50%; overflow: hidden; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
         #minimapCanvas { width: 100%; height: 100%; }
+        
+        /* NOTIFICHE */
         #reloadBar { position: absolute; top: 50%; left: 50%; transform: translate(-50%, 50px); width: 100px; height: 6px; background: rgba(0,0,0,0.5); border-radius: 3px; display: none; }
-        #reloadFill { width: 0%; height: 100%; background: #f1c40f; border-radius: 3px; }
+        #reloadFill { width: 0%; height: 100%; background: #f1c40f; border-radius: 3px; transition: width 0.1s linear; }
     </style>
 </head>
 <body>
@@ -37,18 +40,31 @@
         <button id="startButton">SALPA LE ANCORE</button>
     </div>
 
-    <div id="compass"><div id="compassNeedle">▲</div></div>
     <canvas id="gameCanvas" style="display:none;"></canvas>
+
     <div id="minimapBox"><canvas id="minimapCanvas" width="200" height="200"></canvas></div>
+
     <div id="reloadBar"><div id="reloadFill"></div></div>
 
     <div id="gameUI">
         <div id="statsBox">💰 <span id="goldAmount">0</span></div>
-        <div id="shopContainer" style="display:flex; gap:15px;">
-            <div class="upg-col"><span class="upg-title">❤️ Scafo</span><button id="btn_hp_size" class="buy-btn" onclick="buyUpg('hp_size')">LVL UP</button></div>
-            <div class="upg-col"><span class="upg-title">⚔️ Danni</span><button id="btn_damage" class="buy-btn" onclick="buyUpg('damage')">LVL UP</button></div>
-            <div class="upg-col"><span class="upg-title">🏴‍☠️ Cannoni</span><button id="btn_cannons" class="buy-btn" onclick="buyUpg('cannons')">LVL UP</button></div>
-            <div class="upg-col"><span class="upg-title">⛵ Vele</span><button id="btn_speed" class="buy-btn" onclick="buyUpg('speed')">LVL UP</button></div>
+        <div id="shopContainer">
+            <div class="upg-col">
+                <span class="upg-title">❤️ Scafo (HP/Misura)</span>
+                <button id="btn_hp_size" class="buy-btn" onclick="buyUpg('hp_size')">LVL UP</button>
+            </div>
+            <div class="upg-col">
+                <span class="upg-title">⚔️ Palle di Cannone</span>
+                <button id="btn_damage" class="buy-btn" onclick="buyUpg('damage')">LVL UP</button>
+            </div>
+            <div class="upg-col">
+                <span class="upg-title">🏴‍☠️ Batterie Cannoni</span>
+                <button id="btn_cannons" class="buy-btn" onclick="buyUpg('cannons')">LVL UP</button>
+            </div>
+            <div class="upg-col">
+                <span class="upg-title">⛵ Vele (Velocità)</span>
+                <button id="btn_speed" class="buy-btn" onclick="buyUpg('speed')">LVL UP</button>
+            </div>
         </div>
     </div>
 
@@ -59,11 +75,24 @@
         const ctx = canvas.getContext('2d');
         const mCanvas = document.getElementById('minimapCanvas');
         const mCtx = mCanvas.getContext('2d');
-        const shipSprite = new Image();
-        shipSprite.src = 'https://images-wixmp-ed30a86b8c4ca887773594c2.wixmp.com/f/02f7fc23-e1ad-4d3c-bf35-1c3d96f43d92/d68usui-ef6c334e-11b7-4f75-88b9-ecd34c5d4bf0.png?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1cm46YXBwOjdlMGQxODg5ODIyNjQzNzNhNWYwZDQxNWVhMGQyNmUwIiwiaXNzIjoidXJuOmFwcDo3ZTBkMTg4OTgyMjY0MzczYTVmMGQ0MTVlYTBkMjZlMCIsIm9iaiI6W1t7InBhdGgiOiIvZi8wMmY3ZmMyMy1lMWFkLTRkM2MtYmYzNS0xYzNkOTZmNDNkOTIvZDY4dXN1aS1lZjZjMzM0ZS0xMWI3LTRmNzUtODhiOS1lY2QzNGM1ZDRiZjAucG5nIn1dXSwiYXVkIjpbInVybjpzZXJ2aWNlOmZpbGUuZG93bmxvYWQiXX0.3kMXKaqZTAHsDV35EbNLNy4gihS47ZdXmNCv_p0zXAU';
+        
         const MAP_SIZE = 8000;
         let state = { players: {}, npcs: {}, bullets: [] };
         let localIslands = [];
+
+        // ==========================================
+        // CARICAMENTO SPRITE NAVE
+        // ==========================================
+        const shipSprite = new Image();
+        shipSprite.src = 'https://images-wixmp-ed30a86b8c4ca887773594c2.wixmp.com/f/02f7fc23-e1ad-4d3c-bf35-1c3d96f43d92/d68usui-ef6c334e-11b7-4f75-88b9-ecd34c5d4bf0.png?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1cm46YXBwOjdlMGQxODg5ODIyNjQzNzNhNWYwZDQxNWVhMGQyNmUwIiwiaXNzIjoidXJuOmFwcDo3ZTBkMTg4OTgyMjY0MzczYTVmMGQ0MTVlYTBkMjZlMCIsIm9iaiI6W1t7InBhdGgiOiIvZi8wMmY3ZmMyMy1lMWFkLTRkM2MtYmYzNS0xYzNkOTZmNDNkOTIvZDY4dXN1aS1lZjZjMzM0ZS0xMWI3LTRmNzUtODhiOS1lY2QzNGM1ZDRiZjAucG5nIn1dXSwiYXVkIjpbInVybjpzZXJ2aWNlOmZpbGUuZG93bmxvYWQiXX0.3kMXKaqZTAHsDV35EbNLNy4gihS47ZdXmNCv_p0zXAU';
+
+        // Tabella Costi per la UI
+        const UPG_DATA = {
+            hp_size: { max: 4, costs: [50, 150, 300, 600] },
+            damage:  { max: 3, costs: [100, 250, 500] },
+            cannons: { max: 3, costs: [100, 300, 600] },
+            speed:   { max: 3, costs: [80, 200, 400] }
+        };
 
         document.getElementById('startButton').addEventListener('click', () => {
             document.getElementById('lobbyUI').style.display = 'none';
@@ -73,70 +102,180 @@
             socket.emit('joinGame', document.getElementById('usernameInput').value);
         });
 
-        window.buyUpg = (type) => socket.emit('buyUpgrade', type);
+        window.buyUpg = function(type) { socket.emit('buyUpgrade', type); }
 
-        function updateCompass() {
-            const myShip = state.players[socket.id];
-            if(!myShip) return;
-            const angleToCenter = Math.atan2(4000 - myShip.y, 4000 - myShip.x);
-            document.getElementById('compassNeedle').style.transform = `rotate(${angleToCenter}rad)`;
-        }
+        window.addEventListener('keydown', (e) => { 
+            if (e.code === 'Space') {
+                const p = state.players[socket.id];
+                if(p && Date.now() - p.lastShotTime >= 2500) {
+                    socket.emit('shootCommand');
+                    const rb = document.getElementById('reloadBar');
+                    const rf = document.getElementById('reloadFill');
+                    rb.style.display = 'block'; rf.style.width = '0%';
+                    let prog = 0;
+                    let inter = setInterval(() => {
+                        prog += (100 / 25); rf.style.width = prog + '%';
+                        if(prog >= 100) { clearInterval(inter); rb.style.display = 'none'; }
+                    }, 100);
+                }
+            }
+        });
 
         window.addEventListener('click', (e) => {
-            if(e.clientY > window.innerHeight - 120) return;
+            if(e.clientY > window.innerHeight - 120) return; 
             if (!state.players[socket.id] || state.players[socket.id].isDead) return;
             const myShip = state.players[socket.id];
             socket.emit('moveCommand', { x: e.clientX - canvas.width/2 + myShip.x, y: e.clientY - canvas.height/2 + myShip.y });
         });
 
-        socket.on('initIslands', (islands) => { localIslands = islands; });
-        socket.on('updateState', (newState) => { state = newState; });
+        socket.on('initIslands', (islands) => { localIslands = islands; drawMinimapBase(); });
+        socket.on('updateState', (newState) => { state = newState; updateUI(); });
 
+        function updateUI() {
+            const p = state.players[socket.id];
+            if (!p) return;
+            document.getElementById('goldAmount').innerText = p.gold;
+            
+            for(let key in UPG_DATA) {
+                const btn = document.getElementById('btn_' + key);
+                const lvl = p.upg[key];
+                if (lvl >= UPG_DATA[key].max) {
+                    btn.innerText = "MAX"; btn.disabled = true;
+                } else {
+                    const cost = UPG_DATA[key].costs[lvl];
+                    btn.innerText = `LVL ${lvl+1} (${cost}G)`;
+                    btn.disabled = p.gold < cost;
+                }
+            }
+        }
+
+        // ==========================================
+        // DISEGNO NAVE CON SPRITE IMAGE
+        // ==========================================
         function drawShip(entity, isNpc = false) {
             ctx.save();
             ctx.translate(entity.x, entity.y);
-            // Flip 180 gradi (inverto il segno della rotazione rispetto al precedente)
-            ctx.rotate(entity.angle - Math.PI/2); 
 
+            // Applica rotazione. Aggiungiamo 90 gradi (Math.PI/2) 
+            // perché di solito gli sprite guardano verso l'alto.
+            // Se la tua nave naviga "di traverso", cambia (entity.angle + Math.PI/2) in (entity.angle) o (entity.angle - Math.PI/2).
+            ctx.rotate(entity.angle + Math.PI/2); 
+
+            // Scia d'acqua dietro la nave
             ctx.fillStyle = 'rgba(255,255,255,0.2)';
-            ctx.beginPath(); ctx.moveTo(0, entity.radius); ctx.lineTo(-15, entity.radius * 2.5); ctx.lineTo(15, entity.radius * 2.5); ctx.fill();
+            ctx.beginPath(); 
+            ctx.moveTo(0, entity.radius); // Poppa (dopo la rotazione +90 gradi)
+            ctx.lineTo(-15, entity.radius * 2.5); 
+            ctx.lineTo(15, entity.radius * 2.5); 
+            ctx.fill();
 
+            // Disegna Cannoni fisici
+            ctx.fillStyle = '#111';
+            const cps = entity.cannonCount ? entity.cannonCount / 2 : (entity.type === 'pirate' ? 2 : 0);
+            for(let i=0; i<cps; i++) {
+                const off = (i - (cps-1)/2) * 15;
+                // Posizionati lateralmente (asse X relativo allo sprite)
+                ctx.fillRect(-entity.radius - 4, off - 4, 8, 12); // Sinistra
+                ctx.fillRect(entity.radius - 4, off - 4, 8, 12);  // Destra
+            }
+
+            // --- DISEGNO SPRITE NAVE ---
+            // Scaliamo l'immagine in base al raggio (così quando fai l'upgrade si ingrandisce!)
             const spriteSize = entity.radius * 3.5; 
+            
+            // Disegna l'immagine centrandola
             ctx.drawImage(shipSprite, -spriteSize / 2, -spriteSize / 2, spriteSize, spriteSize);
+            
+            // (Opzionale) Overlay di colore per distinguere i giocatori, disattivato per non rovinare lo sprite.
             ctx.restore();
 
+            // UI Sopra la nave (Barra HP e Nome)
             ctx.fillStyle = '#c0392b'; ctx.fillRect(entity.x - 20, entity.y - entity.radius - 20, 40, 6);
             ctx.fillStyle = '#2ecc71'; ctx.fillRect(entity.x - 20, entity.y - entity.radius - 20, (entity.hp / (entity.maxHp||150)) * 40, 6);
-            if(!isNpc) { ctx.fillStyle = '#fff'; ctx.font = 'bold 12px Arial'; ctx.textAlign = 'center'; ctx.fillText(entity.name, entity.x, entity.y - entity.radius - 25); }
+            if(!isNpc) { 
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 12px Arial'; ctx.textAlign = 'center'; 
+                ctx.fillText(entity.name, entity.x, entity.y - entity.radius - 25); 
+            }
+        }
+
+        // ==========================================
+        // DISEGNO MINIMAPPA
+        // ==========================================
+        let minimapCache = null;
+        function drawMinimapBase() {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = 200; tempCanvas.height = 200;
+            const tCtx = tempCanvas.getContext('2d');
+            const scale = 200 / MAP_SIZE;
+            tCtx.fillStyle = '#f1c40f'; 
+            for (let is of localIslands) {
+                tCtx.beginPath();
+                for (let i = 0; i < is.points.length; i++) {
+                    const p = is.points[i];
+                    const px = (is.x + Math.cos(p.angle) * p.r) * scale;
+                    const py = (is.y + Math.sin(p.angle) * p.r) * scale;
+                    if(i===0) tCtx.moveTo(px, py); else tCtx.lineTo(px, py);
+                }
+                tCtx.fill();
+            }
+            minimapCache = tempCanvas;
+        }
+
+        function drawMinimap() {
+            mCtx.clearRect(0,0,200,200);
+            if(minimapCache) mCtx.drawImage(minimapCache, 0, 0);
+            const scale = 200 / MAP_SIZE;
+            
+            for(let id in state.npcs) {
+                mCtx.fillStyle = state.npcs[id].type === 'merchant' ? 'orange' : 'purple';
+                mCtx.fillRect(state.npcs[id].x * scale, state.npcs[id].y * scale, 3, 3);
+            }
+            for(let id in state.players) {
+                if(state.players[id].isDead) continue;
+                mCtx.fillStyle = id === socket.id ? '#2ecc71' : '#e74c3c';
+                mCtx.beginPath(); mCtx.arc(state.players[id].x * scale, state.players[id].y * scale, id === socket.id ? 4 : 3, 0, Math.PI*2); mCtx.fill();
+            }
         }
 
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             const myShip = state.players[socket.id];
+
             if (myShip) {
-                updateCompass();
                 ctx.save();
                 ctx.translate(canvas.width / 2 - myShip.x, canvas.height / 2 - myShip.y);
-                ctx.fillStyle = '#e3bc8d'; ctx.strokeStyle = '#27ae60'; ctx.lineWidth = 12;
+
+                ctx.fillStyle = '#e3bc8d'; ctx.strokeStyle = '#27ae60'; ctx.lineWidth = 12; 
                 for (let is of localIslands) {
                     ctx.beginPath();
                     for (let i = 0; i < is.points.length; i++) {
                         const p = is.points[i];
-                        const px = is.x + Math.cos(p.angle) * p.r; const py = is.y + Math.sin(p.angle) * p.r;
+                        const px = is.x + Math.cos(p.angle) * p.r;
+                        const py = is.y + Math.sin(p.angle) * p.r;
                         if(i===0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
                     }
-                    ctx.closePath(); ctx.fill(); ctx.stroke();
+                    ctx.closePath();
+                    ctx.fill(); ctx.stroke();
                 }
+
                 for (let id in state.npcs) drawShip(state.npcs[id], true);
                 for (let id in state.players) { if (!state.players[id].isDead) drawShip(state.players[id], false); }
+
                 ctx.fillStyle = '#222';
                 for (let b of state.bullets) { ctx.beginPath(); ctx.arc(b.x, b.y, 5, 0, Math.PI * 2); ctx.fill(); }
                 ctx.restore();
+                
+                drawMinimap();
             }
             requestAnimationFrame(draw);
         }
+        
+        // Aspettiamo che lo sprite si carichi almeno in parte prima di lanciare il loop
         shipSprite.onload = () => { draw(); };
+        // Fallback nel caso l'immagine ci metta troppo o non carichi
         setTimeout(() => { requestAnimationFrame(draw); }, 1000);
+
+        window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
     </script>
 </body>
 </html>
