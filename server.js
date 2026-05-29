@@ -134,7 +134,31 @@ io.on('connection', (socket) => {
 // ==========================================
 setInterval(() => {
     const now = Date.now();
+// --- COLLISIONI TRA NAVI (Giocatori e NPC) ---
+const allShips = [...Object.values(players).filter(p => !p.isDead), ...Object.values(npcs)];
 
+for (let i = 0; i < allShips.length; i++) {
+    for (let j = i + 1; j < allShips.length; j++) {
+        const s1 = allShips[i];
+        const s2 = allShips[j];
+        const dx = s2.x - s1.x;
+        const dy = s2.y - s1.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const minDistance = s1.radius + s2.radius;
+
+        if (distance < minDistance && distance > 0) {
+            const overlap = minDistance - distance;
+            const nx = dx / distance; // Normale X
+            const ny = dy / distance; // Normale Y
+            
+            // Spingi le navi fuori in base alla loro dimensione
+            s1.x -= nx * (overlap / 2);
+            s1.y -= ny * (overlap / 2);
+            s2.x += nx * (overlap / 2);
+            s2.y += ny * (overlap / 2);
+        }
+    }
+}
     // IA NPC Semplificata (Spawn se < 30)
     if (Object.keys(npcs).length < 30) {
         let isPirate = Math.random() > 0.6;

@@ -41,7 +41,9 @@
     </div>
 
     <canvas id="gameCanvas" style="display:none;"></canvas>
-
+<div id="compass" style="position: absolute; top: 20px; left: 20px; width: 60px; height: 60px; border: 2px solid white; border-radius: 50%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; color: #f1c40f;">
+    <div id="compassNeedle" style="width: 2px; height: 40px; background: red; transform-origin: bottom center;"></div>
+</div>
     <div id="minimapBox"><canvas id="minimapCanvas" width="200" height="200"></canvas></div>
 
     <div id="reloadBar"><div id="reloadFill"></div></div>
@@ -159,7 +161,7 @@
             // Applica rotazione. Aggiungiamo 90 gradi (Math.PI/2) 
             // perché di solito gli sprite guardano verso l'alto.
             // Se la tua nave naviga "di traverso", cambia (entity.angle + Math.PI/2) in (entity.angle) o (entity.angle - Math.PI/2).
-            ctx.rotate(entity.angle + Math.PI/2); 
+            ctx.rotate(entity.angle + Math.PI/2 + Math.PI); 
 
             // Scia d'acqua dietro la nave
             ctx.fillStyle = 'rgba(255,255,255,0.2)';
@@ -244,7 +246,10 @@
             if (myShip) {
                 ctx.save();
                 ctx.translate(canvas.width / 2 - myShip.x, canvas.height / 2 - myShip.y);
-
+                const dx = (MAP_SIZE / 2) - myShip.x;
+                const dy = (MAP_SIZE / 2) - myShip.y;
+                const angleToCenter = Math.atan2(dy, dx);
+                document.getElementById('compassNeedle').style.transform = `rotate(${angleToCenter + Math.PI/2}rad)`;
                 ctx.fillStyle = '#e3bc8d'; ctx.strokeStyle = '#27ae60'; ctx.lineWidth = 12; 
                 for (let is of localIslands) {
                     ctx.beginPath();
