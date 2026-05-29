@@ -12,58 +12,69 @@ const bullets = [];
 const npcs = {};
 let npcIdCounter = 0;
 
-// Genera 60 isole (molto più grandi)
+// ==========================================
+// 1. SISTEMA UPGRADE E PREZZI
+// ==========================================
+const UPGRADES = {
+    hp_size: { maxLevel: 4, costs: [50, 150, 300, 600],  hp: [100, 150, 200, 300, 500], radius: [25, 28, 32, 38, 45] },
+    damage:  { maxLevel: 3, costs: [100, 250, 500],      dmg: [20, 30, 45, 70] },
+    cannons: { maxLevel: 3, costs: [100, 300, 600],      count: [2, 4, 6, 8] },
+    speed:   { maxLevel: 3, costs: [80, 200, 400],       spd: [4.5, 5.2, 6.0, 7.5] }
+};
+
+// ==========================================
+// 2. GENERAZIONE ISOLE IRREGOLARI
+// ==========================================
 function generateIslands() {
     let attempts = 0;
-    while (islands.length < 60 && attempts < 500) {
+    while (islands.length < 50 && attempts < 1000) {
         attempts++;
-        const mainRadius = Math.random() * 150 + 80; // Isole enormi
-        const mainX = Math.random() * (MAP_SIZE - 600) + 300;
-        const mainY = Math.random() * (MAP_SIZE - 600) + 300;
+        const baseR = Math.random() * 150 + 100; // Isole belle grosse
+        const x = Math.random() * (MAP_SIZE - baseR * 3) + baseR * 1.5;
+        const y = Math.random() * (MAP_SIZE - baseR * 3) + baseR * 1.5;
 
-        let overlapping = false;
+        // Controllo Sovrapposizione Severo (Distanza > Raggio1 + Raggio2 + Margine)
+        let overlap = false;
         for (let is of islands) {
-            for (let sub of is.circles) {
-                const dx = mainX - sub.x; const dy = mainY - sub.y;
-                if (Math.sqrt(dx*dx + dy*dy) < mainRadius + sub.radius + 80) { overlapping = true; break; }
-            }
-            if (overlapping) break;
+            const dx = x - is.x; const dy = y - is.y;
+            if (Math.sqrt(dx*dx + dy*dy) < baseR + is.maxR + 150) { overlap = true; break; }
         }
 
-        if (!overlapping) {
-            const islandCircles = [{ x: mainX, y: mainY, radius: mainRadius }];
-            const subCirclesCount = Math.floor(Math.random() * 4) + 2;
-            for (let j = 0; j < subCirclesCount; j++) {
-                const angle = Math.random() * Math.PI * 2;
-                const distance = Math.random() * (mainRadius * 0.6);
-                islandCircles.push({
-                    x: mainX + Math.cos(angle) * distance, y: mainY + Math.sin(angle) * distance,
-                    radius: mainRadius * (Math.random() * 0.5 + 0.5)
-                });
+        if (!overlap) {
+            // Genera la forma irregolare dell'isola (Poligono frastagliato)
+            const numPoints = 16; // Più punti = forma più complessa
+            const points = [];
+            let maxR = 0;
+            
+            for (let i = 0; i < numPoints; i++) {
+                const angle = (i / numPoints) * Math.PI * 2;
+                // Variazione random del raggio per creare insenature e penisole
+                const r = baseR + (Math.random() * 80 - 40);
+                if (r > maxR) maxR = r;
+                points.push({ angle, r });
             }
-            islands.push({ id: islands.length, circles: islandCircles });
+            islands.push({ id: islands.length, x, y, maxR, points });
         }
     }
 }
 generateIslands();
 
-// Costi del Negozio (Per sbloccare il Tier successivo, devi completare il precedente)
-const SHOP_TIERS = {
-    1: { gold: 50,  hpBonus: 50, sizeBonus: 5, cannons: 4 }, // 4 cannoni totali (2 per lato)
-    2: { gold: 150, hpBonus: 80, sizeBonus: 8, cannons: 6 }, // 6 cannoni
-    3: { gold: 300, hpBonus: 120, sizeBonus: 10, cannons: 8 } // 8 cannoni (Max)
-};
-
+// ==========================================
+// 3. CONNESSIONI E LOGICA
+// ==========================================
 io.on('connection', (socket) => {
     socket.on('joinGame', (username) => {
         players[socket.id] = {
             id: socket.id, name: username || "Capitano",
             x: Math.random() * (MAP_SIZE - 400) + 200, y: Math.random() * (MAP_SIZE - 400) + 200,
-            targetX: null, targetY: null,
-            speed: 4.5, radius: 25, angle: 0,
-            maxHp: 100, hp: 100, isDead: false,
-            lastShotTime: 0, cannonCount: 2, // Parte con 2 cannoni (1 per lato)
-            gold: 0, tier: 0, // Tier attuale
+            targetX: null, targetY: null, angle: 0,
+            isDead: false, gold: 0, lastShotTime: 0,
+            // Livelli Upgrade
+            upg: { hp_size: 0, damage: 0, cannons: 0, speed: 0 },
+            // Statistiche derivate
+            hp: UPGRADES.hp_size.hp[0], maxHp: UPGRADES.hp_size.hp[0],
+            radius: UPGRADES.hp_size.radius[0], speed: UPGRADES.speed.spd[0],
+            cannonCount: UPGRADES.cannons.count[0], damage: UPGRADES.damage.dmg[0],
             color: `hsl(${Math.random() * 360}, 70%, 50%)`
         };
         socket.emit('initIslands', islands);
@@ -77,49 +88,40 @@ io.on('connection', (socket) => {
 
     socket.on('shootCommand', () => {
         const p = players[socket.id];
-        const now = Date.now();
-        // Cooldown di 2.5 secondi (2500 millisecondi)
-        if (p && !p.isDead && now - p.lastShotTime >= 2500) {
-            p.lastShotTime = now;
-            const cannonsPerSide = p.cannonCount / 2;
-            
-            // Genera i proiettili per ogni cannone
-            for(let i=0; i<cannonsPerSide; i++) {
-                // Sfalsa leggermente i proiettili se ci sono più cannoni
-                const offset = (i - (cannonsPerSide-1)/2) * 15; 
-                
-                // Lato Destro
-                bullets.push({
-                    id: Math.random(), playerId: socket.id,
-                    x: p.x + Math.cos(p.angle) * offset, y: p.y + Math.sin(p.angle) * offset,
-                    vx: Math.cos(p.angle + Math.PI / 2) * 10, vy: Math.sin(p.angle + Math.PI / 2) * 10,
-                    life: 40
-                });
-                // Lato Sinistro
-                bullets.push({
-                    id: Math.random(), playerId: socket.id,
-                    x: p.x + Math.cos(p.angle) * offset, y: p.y + Math.sin(p.angle) * offset,
-                    vx: Math.cos(p.angle - Math.PI / 2) * 10, vy: Math.sin(p.angle - Math.PI / 2) * 10,
-                    life: 40
-                });
+        if (p && !p.isDead && Date.now() - p.lastShotTime >= 2500) { // 2.5s ricarica
+            p.lastShotTime = Date.now();
+            const cps = p.cannonCount / 2;
+            for(let i=0; i<cps; i++) {
+                const offset = (i - (cps-1)/2) * 15; 
+                // Crea proiettili passando il danno del giocatore
+                const createBullet = (dirOffset) => {
+                    bullets.push({
+                        id: Math.random(), playerId: socket.id, dmg: p.damage,
+                        x: p.x + Math.cos(p.angle) * offset, y: p.y + Math.sin(p.angle) * offset,
+                        vx: Math.cos(p.angle + dirOffset) * 12, vy: Math.sin(p.angle + dirOffset) * 12, life: 40
+                    });
+                };
+                createBullet(Math.PI / 2);  // Tribordo
+                createBullet(-Math.PI / 2); // Babordo
             }
         }
     });
 
-    // Logica Acquisto Negozio
-    socket.on('buyUpgrade', () => {
+    socket.on('buyUpgrade', (type) => {
         const p = players[socket.id];
-        if (p && !p.isDead) {
-            const nextTier = p.tier + 1;
-            const upgrade = SHOP_TIERS[nextTier];
-            
-            if (upgrade && p.gold >= upgrade.gold) {
-                p.gold -= upgrade.gold;
-                p.tier = nextTier;
-                p.maxHp += upgrade.hpBonus;
-                p.hp = p.maxHp; // Cura completa all'upgrade
-                p.radius += upgrade.sizeBonus;
-                p.cannonCount = upgrade.cannons;
+        if (p && !p.isDead && UPGRADES[type]) {
+            const currentLevel = p.upg[type];
+            if (currentLevel < UPGRADES[type].maxLevel) {
+                const cost = UPGRADES[type].costs[currentLevel];
+                if (p.gold >= cost) {
+                    p.gold -= cost;
+                    p.upg[type]++;
+                    // Aggiorna le statistiche in base al nuovo livello
+                    if(type === 'hp_size') { p.maxHp = UPGRADES.hp_size.hp[p.upg[type]]; p.hp = p.maxHp; p.radius = UPGRADES.hp_size.radius[p.upg[type]]; }
+                    if(type === 'damage') p.damage = UPGRADES.damage.dmg[p.upg[type]];
+                    if(type === 'cannons') p.cannonCount = UPGRADES.cannons.count[p.upg[type]];
+                    if(type === 'speed') p.speed = UPGRADES.speed.spd[p.upg[type]];
+                }
             }
         }
     });
@@ -127,76 +129,81 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => { delete players[socket.id]; });
 });
 
-// LOOP FISICA & IA (30 FPS)
+// ==========================================
+// 4. LOOP FISICA (Collisioni Perfette)
+// ==========================================
 setInterval(() => {
     const now = Date.now();
 
-    // 1. SPAWN NPC (Fino a 30 in mappa)
+    // IA NPC Semplificata (Spawn se < 30)
     if (Object.keys(npcs).length < 30) {
-        let isPirate = Math.random() > 0.6; // 40% Pirati, 60% Mercantili
+        let isPirate = Math.random() > 0.6;
         let id = 'npc_' + npcIdCounter++;
         npcs[id] = {
-            id: id, type: isPirate ? 'pirate' : 'merchant',
-            x: Math.random() * (MAP_SIZE - 400) + 200, y: Math.random() * (MAP_SIZE - 400) + 200,
-            angle: Math.random() * Math.PI * 2,
-            speed: isPirate ? 3.5 : 2, radius: isPirate ? 25 : 35,
-            hp: isPirate ? 150 : 200, isDead: false,
-            goldValue: isPirate ? 30 : 80, // Mercantili danno più oro
-            lastShotTime: 0
+            id, type: isPirate ? 'pirate' : 'merchant',
+            x: Math.random() * (MAP_SIZE-600) + 300, y: Math.random() * (MAP_SIZE-600) + 300, angle: Math.random() * Math.PI*2,
+            speed: isPirate ? 4 : 2.5, radius: isPirate ? 25 : 35,
+            hp: isPirate ? 150 : 250, isDead: false, goldValue: isPirate ? 40 : 100,
+            lastShotTime: 0, damage: 20
         };
     }
 
-    // 2. IA DEGLI NPC
     for (let id in npcs) {
-        let npc = npcs[id];
-        
-        // Movimento base: vanno dritti. Se toccano i bordi, si girano.
-        npc.x += Math.cos(npc.angle) * npc.speed;
-        npc.y += Math.sin(npc.angle) * npc.speed;
+        let n = npcs[id];
+        n.x += Math.cos(n.angle) * n.speed; n.y += Math.sin(n.angle) * n.speed;
+        if (n.x < 100 || n.x > MAP_SIZE - 100 || n.y < 100 || n.y > MAP_SIZE - 100) n.angle += Math.PI;
+    }
 
-        if (npc.x < 100 || npc.x > MAP_SIZE - 100 || npc.y < 100 || npc.y > MAP_SIZE - 100) {
-            npc.angle += Math.PI; // Inversione a U
+    // Movimento Giocatori e COLLISIONI ISOLE
+    for (let id in players) {
+        const p = players[id];
+        if (p.isDead) continue;
+        
+        if (p.targetX !== null && p.targetY !== null) {
+            const dx = p.targetX - p.x; const dy = p.targetY - p.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist > 8) {
+                p.angle = Math.atan2(dy, dx);
+                p.x += (dx / dist) * p.speed;
+                p.y += (dy / dist) * p.speed;
+            } else {
+                p.targetX = null; p.targetY = null;
+            }
         }
 
-        // IA Pirati: Cerca giocatore vicino e spara
-        if (npc.type === 'pirate' && now - npc.lastShotTime > 3000) {
-            for (let pid in players) {
-                let p = players[pid];
-                if (p.isDead) continue;
-                let dx = p.x - npc.x; let dy = p.y - npc.y;
-                if (Math.sqrt(dx*dx + dy*dy) < 300) { // Nel raggio d'azione
-                    npc.angle = Math.atan2(dy, dx); // Punta il giocatore
-                    npc.lastShotTime = now;
-                    // Spara lateralmente
-                    bullets.push({
-                        id: Math.random(), playerId: npc.id, x: npc.x, y: npc.y,
-                        vx: Math.cos(npc.angle + Math.PI/2) * 8, vy: Math.sin(npc.angle + Math.PI/2) * 8, life: 40
-                    });
-                    bullets.push({
-                        id: Math.random(), playerId: npc.id, x: npc.x, y: npc.y,
-                        vx: Math.cos(npc.angle - Math.PI/2) * 8, vy: Math.sin(npc.angle - Math.PI/2) * 8, life: 40
-                    });
-                    break;
+        // --- SISTEMA DI SCIVOLAMENTO COSTE ---
+        for (let is of islands) {
+            const dx = p.x - is.x; const dy = p.y - is.y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            
+            // Broad-phase: È vicino all'isola?
+            if (dist < is.maxR + p.radius) {
+                let angleToCenter = Math.atan2(dy, dx);
+                if (angleToCenter < 0) angleToCenter += Math.PI * 2;
+                
+                // Trova il raggio esatto dell'isola a quell'angolo interpolando i punti
+                const points = is.points;
+                let islandR = is.maxR; // Fallback
+                for (let i = 0; i < points.length; i++) {
+                    let next = (i + 1) % points.length;
+                    if (angleToCenter >= points[i].angle && (angleToCenter <= points[next].angle || next === 0)) {
+                        // Semplificazione: prendiamo il raggio massimo tra i due punti vicini
+                        islandR = Math.max(points[i].r, points[next].r);
+                        break;
+                    }
+                }
+
+                // Se la nave è dentro l'isola, la SPINGIAMO FUORI dolcemente (Scivolamento)
+                if (dist < islandR + p.radius) {
+                    const pushDist = (islandR + p.radius) - dist;
+                    p.x += Math.cos(angleToCenter) * pushDist;
+                    p.y += Math.sin(angleToCenter) * pushDist;
                 }
             }
         }
     }
 
-    // 3. MOVIMENTO GIOCATORI E COLLISIONI (Semplificato per spazio)
-    for (let id in players) {
-        const p = players[id];
-        if (p.isDead) continue;
-        if (p.targetX !== null && p.targetY !== null) {
-            const dx = p.targetX - p.x; const dy = p.targetY - p.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            if (distance > 8) {
-                p.angle = Math.atan2(dy, dx);
-                p.x += (dx / distance) * p.speed; p.y += (dy / distance) * p.speed;
-            } else { p.targetX = null; p.targetY = null; }
-        }
-    }
-
-    // 4. PROIETTILI E DANNI
+    // Proiettili e Danni
     for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
         b.x += b.vx; b.y += b.vy; b.life--;
@@ -208,17 +215,11 @@ setInterval(() => {
             if (!p.isDead && pid !== b.playerId) {
                 let dx = b.x - p.x; let dy = b.y - p.y;
                 if (Math.sqrt(dx*dx + dy*dy) < p.radius) {
-                    p.hp -= 20; hit = true;
+                    p.hp -= b.dmg; hit = true;
                     if (p.hp <= 0) {
                         p.isDead = true;
-                        if(players[b.playerId]) players[b.playerId].gold += 10; // Bonus uccisione giocatore
-                        setTimeout(() => { 
-                            if(players[pid]){
-                                players[pid].hp = players[pid].maxHp; players[pid].isDead = false;
-                                players[pid].x = Math.random() * (MAP_SIZE - 600) + 300;
-                                players[pid].y = Math.random() * (MAP_SIZE - 600) + 300;
-                            }
-                        }, 4000);
+                        if(players[b.playerId]) players[b.playerId].gold += 30; // Kill reward
+                        setTimeout(() => { if(players[pid]){ p.hp = p.maxHp; p.isDead = false; p.x = Math.random()*MAP_SIZE; p.y = Math.random()*MAP_SIZE; } }, 4000);
                     }
                     break;
                 }
@@ -228,14 +229,13 @@ setInterval(() => {
         // Hit NPC
         if (!hit) {
             for (let nid in npcs) {
-                let npc = npcs[nid];
+                let n = npcs[nid];
                 if (nid !== b.playerId) {
-                    let dx = b.x - npc.x; let dy = b.y - npc.y;
-                    if (Math.sqrt(dx*dx + dy*dy) < npc.radius) {
-                        npc.hp -= 20; hit = true;
-                        if (npc.hp <= 0) {
-                            // Dai oro a chi lo ha ucciso (se è un giocatore)
-                            if (players[b.playerId]) players[b.playerId].gold += npc.goldValue;
+                    let dx = b.x - n.x; let dy = b.y - n.y;
+                    if (Math.sqrt(dx*dx + dy*dy) < n.radius) {
+                        n.hp -= b.dmg; hit = true;
+                        if (n.hp <= 0) {
+                            if (players[b.playerId]) players[b.playerId].gold += n.goldValue;
                             delete npcs[nid];
                         }
                         break;
@@ -243,7 +243,6 @@ setInterval(() => {
                 }
             }
         }
-
         if (hit || b.life <= 0) bullets.splice(i, 1);
     }
 
