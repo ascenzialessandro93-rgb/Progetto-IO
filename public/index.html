@@ -4,26 +4,26 @@
     <meta charset="UTF-8">
     <title>Pirate RTS .io</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #006994; font-family: Arial, sans-serif; }
+        body { margin: 0; overflow: hidden; background: #006994; font-family: 'Arial', sans-serif; }
         canvas { display: block; background: #0077be; }
-        
-        /* Stile semplicissimo per la Lobby/Menu */
         #lobbyUI {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            background: rgba(0,0,0,0.8); padding: 30px; border-radius: 10px;
-            text-align: center; color: white; box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            background: rgba(20, 20, 20, 0.9); padding: 40px; border-radius: 15px;
+            text-align: center; color: white; box-shadow: 0 0 25px rgba(0,0,0,0.7); border: 2px solid #e67e22;
         }
-        #lobbyUI input { padding: 10px; width: 200px; border: none; border-radius: 5px; margin-bottom: 15px; font-size: 16px; }
-        #lobbyUI button { padding: 10px 20px; background: #e67e22; border: none; border-radius: 5px; color: white; font-size: 16px; cursor: pointer; font-weight: bold; }
+        #lobbyUI input { padding: 12px; width: 220px; border: none; border-radius: 5px; margin-bottom: 20px; font-size: 16px; }
+        #lobbyUI button { padding: 12px 25px; background: #e67e22; border: none; border-radius: 5px; color: white; font-size: 18px; cursor: pointer; font-weight: bold; }
         #lobbyUI button:hover { background: #d35400; }
+        #controlsHelp { color: #aaa; font-size: 13px; margin-top: 15px; }
     </style>
 </head>
 <body>
 
     <div id="lobbyUI">
-        <h2>SOLCA I MARI ARRR!</h2>
-        <input type="text" id="usernameInput" placeholder="Nome Capitano..." maxlength="15"><br>
-        <button id="startButton">SALPA!</button>
+        <h1 style="color:#e67e22; margin-top:0;">BATTAGLIA NAVALE .IO</h1>
+        <input type="text" id="usernameInput" placeholder="Nome Capitano..." maxlength="12"><br>
+        <button id="startButton">PRENDI IL TIMONE</button>
+        <div id="controlsHelp">Click Sinistro: Muovi Flotta | Barra Spaziatrice: Fuoco Laterale</div>
     </div>
 
     <canvas id="gameCanvas" style="display:none;"></canvas>
@@ -37,37 +37,38 @@
         const startButton = document.getElementById('startButton');
 
         let localPlayers = {};
+        let localBullets = [];
         let localIslands = [];
-        let myId = null;
 
-        // Gestione Accesso Gioco
         startButton.addEventListener('click', () => {
             const name = document.getElementById('usernameInput').value;
             lobbyUI.style.display = 'none';
             canvas.style.display = 'block';
-            
-            // Ridimensiona il canvas
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
-            
-            myId = socket.id;
             socket.emit('joinGame', name);
         });
 
-        // Ricezione Dati
-        socket.on('initIslands', (islands) => { localIslands = islands; });
-        socket.on('updatePlayers', (serverPlayers) => { localPlayers = serverPlayers; });
+        // Tasto Spazio per sparare con i cannoni di babordo e tribordo
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                socket.emit('shootCommand');
+            }
+        });
 
-        // Invio comando di movimento (calcolando la posizione nel mondo reale, non dello schermo)
         window.addEventListener('click', (e) => {
-            if (!localPlayers[socket.id]) return;
-            
-            // Calcolo dove ha cliccato il giocatore nel mondo di gioco tenendo conto della telecamera
+            if (!localPlayers[socket.id] || localPlayers[socket.id].isDead) return;
             const myShip = localPlayers[socket.id];
             const worldX = e.clientX - canvas.width / 2 + myShip.x;
             const worldY = e.clientY - canvas.height / 2 + myShip.y;
-            
             socket.emit('moveCommand', { x: worldX, y: worldY });
+        });
+
+        socket.on('initIslands', (islands) => { localIslands = islands; });
+        socket.on('updateState', (state) => {
+            localPlayers = state.players;
+            localBullets = state.bullets;
         });
 
         function draw() {
@@ -76,44 +77,82 @@
             if (localPlayers[socket.id]) {
                 const myShip = localPlayers[socket.id];
                 
-                // Sistema di Telecamera: Trasla tutto il disegno centrando la mia nave
                 ctx.save();
                 ctx.translate(canvas.width / 2 - myShip.x, canvas.height / 2 - myShip.y);
 
-                // Disegna i Confini della Mappa (2000x2000)
-                ctx.strokeStyle = "rgba(255, 0, 0, 0.5)";
-                ctx.lineWidth = 5;
-                ctx.strokeRect(0, 0, 2000, 2000);
+                // Confini mappa
+                ctx.strokeStyle = "rgba(231, 76, 60, 0.4)";
+                ctx.lineWidth = 8;
+                ctx.strokeRect(0, 0, 3000, 3000);
 
-                // Disegna le Isole
-                ctx.fillStyle = '#dbaf79'; // Colore sabbia
+                // Disegna Isole Irregolari composte
+                ctx.fillStyle = '#e3bc8d'; 
+                ctx.strokeStyle = '#27ae60';
+                ctx.lineWidth = 5;
                 for (let island of localIslands) {
-                    ctx.beginPath();
-                    ctx.arc(island.x, island.y, island.radius, 0, Math.PI * 2);
-                    ctx.fill();
-                    // Bordo verde dell'isola (vegetazione)
-                    ctx.strokeStyle = '#27ae60';
-                    ctx.lineWidth = 4;
-                    ctx.stroke();
+                    for (let circle of island.circles) {
+                        ctx.beginPath();
+                        ctx.arc(circle.x, circle.y, circle.radius, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.stroke();
+                    }
                 }
 
-                // Disegna i Giocatori
+                // Disegna Proiettili Palle di Cannone
+                ctx.fillStyle = '#2c3e50';
+                for (let b of localBullets) {
+                    ctx.beginPath();
+                    ctx.arc(b.x, b.y, 5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                // Disegna Navi Giocatori
                 for (let id in localPlayers) {
                     const player = localPlayers[id];
-                    
+                    if (player.isDead) continue;
+
+                    ctx.save();
+                    ctx.translate(player.x, player.y);
+                    ctx.rotate(player.angle); // Ruota il disegno verso la direzione di marcia
+
+                    // Disegno scafo a forma di barchetta/punta
                     ctx.fillStyle = player.color;
                     ctx.beginPath();
-                    ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+                    ctx.moveTo(-player.radius, -player.radius * 0.7);
+                    ctx.lineTo(player.radius * 1.3, 0); // Prua a punta verso destra
+                    ctx.lineTo(-player.radius, player.radius * 0.7);
+                    ctx.closePath();
                     ctx.fill();
+                    
+                    // Riga nera di mezzeria (ponte della nave)
+                    ctx.strokeStyle = '#111';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    ctx.restore();
 
-                    // Nome del capitano
+                    // --- INTERFACCIA SOPRA LA NAVE (HP e Nome) ---
+                    // Nome
                     ctx.fillStyle = '#fff';
-                    ctx.font = 'bold 14px Arial';
+                    ctx.font = 'bold 13px Arial';
                     ctx.textAlign = 'center';
-                    ctx.fillText(player.name, player.x, player.y - player.radius - 10);
+                    ctx.fillText(player.name, player.x, player.y - player.radius - 20);
+
+                    // Sfondo Barra HP (Rosso)
+                    ctx.fillStyle = '#c0392b';
+                    ctx.fillRect(player.x - 25, player.y - player.radius - 12, 50, 6);
+                    // Barra HP Attuale (Verde)
+                    ctx.fillStyle = '#2ecc71';
+                    const hpWidth = (player.hp / player.maxHp) * 50;
+                    ctx.fillRect(player.x - 25, player.y - player.radius - 12, hpWidth, 6);
                 }
 
-                ctx.restore(); // Ripristina la telecamera
+                ctx.restore();
+            } else if (canvas.style.display === 'block') {
+                // Schermata di Affondamento Temporanea
+                ctx.fillStyle = 'white';
+                ctx.font = '30px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText("La tua flotta è colata a picco! Respawn in corso...", canvas.width/2, canvas.height/2);
             }
 
             requestAnimationFrame(draw);
@@ -121,8 +160,7 @@
         draw();
 
         window.addEventListener('resize', () => {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
+            canvas.width = window.innerWidth; canvas.height = window.innerHeight;
         });
     </script>
 </body>

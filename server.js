@@ -5,103 +5,141 @@ const io = require('socket.io')(http);
 
 app.use(express.static('public'));
 
-// Configurazione Mondo di Gioco
-const MAP_SIZE = 2000; 
+const MAP_SIZE = 3000; // Mappa ingrandita per esplorare meglio
 const players = {};
 const islands = [];
+const bullets = [];
 
-// Generazione randomica delle isole (Eseguita una volta all'avvio)
+// Generazione isole con controllo sovrapposizione e forme irregolari
 function generateIslands() {
-    for (let i = 0; i < 15; i++) {
-        islands.push({
-            id: i,
-            x: Math.random() * (MAP_SIZE - 200) + 100,
-            y: Math.random() * (MAP_SIZE - 200) + 100,
-            radius: Math.random() * 60 + 30 // Dimensioni piccole/medie
-        });
+    let attempts = 0;
+    while (islands.length < 18 && attempts < 100) {
+        attempts++;
+        const mainRadius = Math.random() * 70 + 40;
+        const mainX = Math.random() * (MAP_SIZE - 300) + 150;
+        const mainY = Math.random() * (MAP_SIZE - 300) + 150;
+
+        // Controlla se si sovrappone a isole esistenti
+        let overlapping = false;
+        for (let is of islands) {
+            // Controlla contro il centro di ogni sotto-cerchio dell'isola esistente
+            for (let sub of is.circles) {
+                const dx = mainX - sub.x;
+                const dy = mainY - sub.y;
+                if (Math.sqrt(dx*dx + dy*dy) < mainRadius + sub.radius + 40) {
+                    overlapping = true;
+                    break;
+                }
+            }
+            if (overlapping) break;
+        }
+
+        if (!overlapping) {
+            // Crea una forma irregolare unendo più cerchi attorno al centro
+            const islandCircles = [{ x: mainX, y: mainY, radius: mainRadius }];
+            const subCirclesCount = Math.floor(Math.random() * 3) + 2; // 2 o 4 cerchi extra
+            
+            for (let j = 0; j < subCirclesCount; j++) {
+                const angle = Math.random() * Math.PI * 2;
+                const distance = Math.random() * (mainRadius * 0.5);
+                islandCircles.push({
+                    x: mainX + Math.cos(angle) * distance,
+                    y: mainY + Math.sin(angle) * distance,
+                    radius: mainRadius * (Math.random() * 0.4 + 0.5) // Più piccoli del centro
+                });
+            }
+            islands.push({ id: islands.length, circles: islandCircles });
+        }
     }
 }
 generateIslands();
 
 io.on('connection', (socket) => {
-    console.log(`Pirata connesso: ${socket.id}`);
-
-    // Il giocatore viene creato solo DOPO aver inserito il nome nel menu
     socket.on('joinGame', (username) => {
         players[socket.id] = {
             id: socket.id,
             name: username || "Anonimo",
-            x: Math.random() * (MAP_SIZE - 100) + 50,
-            y: Math.random() * (MAP_SIZE - 100) + 50,
-            targetX: null,
-            targetY: null,
-            speed: 4,
-            radius: 20, // Raggio di collisione della nave
+            x: Math.random() * (MAP_SIZE - 200) + 100,
+            y: Math.random() * (MAP_SIZE - 200) + 100,
+            targetX: null, targetY: null,
+            speed: 4, radius: 22, angle: 0,
+            maxHp: 100, hp: 100, isDead: false,
             color: `hsl(${Math.random() * 360}, 70%, 50%)`
         };
-        // Invia i dati delle isole solo al giocatore che è appena entrato
         socket.emit('initIslands', islands);
     });
 
     socket.on('moveCommand', (target) => {
-        if (players[socket.id]) {
-            players[socket.id].targetX = target.x;
-            players[socket.id].targetY = target.y;
+        const p = players[socket.id];
+        if (p && !p.isDead) {
+            p.targetX = target.x;
+            p.targetY = target.y;
         }
     });
 
-    socket.on('disconnect', () => {
-        delete players[socket.id];
+    // Comando di fuoco: calcola i colpi laterali (sinistra e destra)
+    socket.on('shootCommand', () => {
+        const p = players[socket.id];
+        if (p && !p.isDead) {
+            // Cannone Destro (+90 gradi rispetto alla prua)
+            bullets.push({
+                id: Math.random(), playerId: socket.id,
+                x: p.x, y: p.y,
+                vx: Math.cos(p.angle + Math.PI / 2) * 8,
+                vy: Math.sin(p.angle + Math.PI / 2) * 8,
+                life: 45 // Durata del proiettile in frame
+            });
+            // Cannone Sinistro (-90 gradi rispetto alla prua)
+            bullets.push({
+                id: Math.random(), playerId: socket.id,
+                x: p.x, y: p.y,
+                vx: Math.cos(p.angle - Math.PI / 2) * 8,
+                vy: Math.sin(p.angle - Math.PI / 2) * 8,
+                life: 45
+            });
+        }
     });
+
+    socket.on('disconnect', () => { delete players[socket.id]; });
 });
 
-// --- GAME LOOP DEL SERVER (30 Volte al secondo) ---
+// LOOP FISICA (30 FPS)
 setInterval(() => {
+    // 1. Aggiorna Movimento Giocatori
     for (let id in players) {
         const p = players[id];
+        if (p.isDead) continue;
+
         if (p.targetX !== null && p.targetY !== null) {
-            // Calcolo della distanza dal target
             const dx = p.targetX - p.x;
             const dy = p.targetY - p.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
 
-            if (distance > 5) { // Se è abbastanza lontano dal punto di click, si muove
-                // Memorizza la posizione precedente in caso di collisione
+            if (distance > 8) {
+                // Calcola l'angolo di navigazione attuale verso il target
+                p.angle = Math.atan2(dy, dx);
+
                 const prevX = p.x;
                 const prevY = p.y;
-
-                // Calcolo vettore di movimento fluido
                 p.x += (dx / distance) * p.speed;
                 p.y += (dy / distance) * p.speed;
 
-                // 1. Collisione con i bordi della mappa
+                // Collisione Bordi
                 if (p.x < 0 || p.x > MAP_SIZE) p.x = prevX;
                 if (p.y < 0 || p.y > MAP_SIZE) p.y = prevY;
 
-                // 2. Collisione con le Isole (Cerchio contro Cerchio)
+                // Collisione Isole Irregolari
+                let hitIsland = false;
                 for (let island of islands) {
-                    const idx = p.x - island.x;
-                    const idy = p.y - island.y;
-                    const distIsland = Math.sqrt(idx * idx + idy * idy);
-                    
-                    // Se la distanza è minore della somma dei due raggi -> COLLISIONE
-                    if (distIsland < p.radius + island.radius) {
-                        p.x = prevX;
-                        p.y = prevY;
-                        p.targetX = null; // Ferma la nave
-                        p.targetY = null;
-                        break;
+                    for (let circle of island.circles) {
+                        const idx = p.x - circle.x;
+                        const idy = p.y - circle.y;
+                        if (Math.sqrt(idx*idx + idy*idy) < p.radius + circle.radius) {
+                            hitIsland = true;
+                            break;
+                        }
                     }
+                    if (hitIsland) break;
                 }
-            } else {
-                p.targetX = null;
-                p.targetY = null;
-            }
-        }
-    }
-    // Invia lo stato globale aggiornato a tutti i client
-    io.emit('updatePlayers', players);
-}, 1000 / 30);
-
-const PORT = process.env.PORT || 3000;
-http.listen(PORT, () => console.log(`Server online sulla porta ${PORT}`));
+                if (hitIsland) {
+                    p.x = prevX; p.y =
