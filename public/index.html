@@ -80,6 +80,12 @@
         let state = { players: {}, npcs: {}, bullets: [] };
         let localIslands = [];
 
+        // ==========================================
+        // CARICAMENTO SPRITE NAVE
+        // ==========================================
+        const shipSprite = new Image();
+        shipSprite.src = 'https://images-wixmp-ed30a86b8c4ca887773594c2.wixmp.com/f/02f7fc23-e1ad-4d3c-bf35-1c3d96f43d92/d68usui-ef6c334e-11b7-4f75-88b9-ecd34c5d4bf0.png?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1cm46YXBwOjdlMGQxODg5ODIyNjQzNzNhNWYwZDQxNWVhMGQyNmUwIiwiaXNzIjoidXJuOmFwcDo3ZTBkMTg4OTgyMjY0MzczYTVmMGQ0MTVlYTBkMjZlMCIsIm9iaiI6W1t7InBhdGgiOiIvZi8wMmY3ZmMyMy1lMWFkLTRkM2MtYmYzNS0xYzNkOTZmNDNkOTIvZDY4dXN1aS1lZjZjMzM0ZS0xMWI3LTRmNzUtODhiOS1lY2QzNGM1ZDRiZjAucG5nIn1dXSwiYXVkIjpbInVybjpzZXJ2aWNlOmZpbGUuZG93bmxvYWQiXX0.3kMXKaqZTAHsDV35EbNLNy4gihS47ZdXmNCv_p0zXAU';
+
         // Tabella Costi per la UI
         const UPG_DATA = {
             hp_size: { max: 4, costs: [50, 150, 300, 600] },
@@ -103,7 +109,6 @@
                 const p = state.players[socket.id];
                 if(p && Date.now() - p.lastShotTime >= 2500) {
                     socket.emit('shootCommand');
-                    // Animazione ricarica client-side
                     const rb = document.getElementById('reloadBar');
                     const rf = document.getElementById('reloadFill');
                     rb.style.display = 'block'; rf.style.width = '0%';
@@ -117,7 +122,7 @@
         });
 
         window.addEventListener('click', (e) => {
-            if(e.clientY > window.innerHeight - 120) return; // Non muovere se clicchi UI
+            if(e.clientY > window.innerHeight - 120) return; 
             if (!state.players[socket.id] || state.players[socket.id].isDead) return;
             const myShip = state.players[socket.id];
             socket.emit('moveCommand', { x: e.clientX - canvas.width/2 + myShip.x, y: e.clientY - canvas.height/2 + myShip.y });
@@ -131,7 +136,6 @@
             if (!p) return;
             document.getElementById('goldAmount').innerText = p.gold;
             
-            // Aggiorna Bottoni
             for(let key in UPG_DATA) {
                 const btn = document.getElementById('btn_' + key);
                 const lvl = p.upg[key];
@@ -146,53 +150,52 @@
         }
 
         // ==========================================
-        // DISEGNO NAVE AVANZATO
+        // DISEGNO NAVE CON SPRITE IMAGE
         // ==========================================
         function drawShip(entity, isNpc = false) {
             ctx.save();
             ctx.translate(entity.x, entity.y);
-            ctx.rotate(entity.angle);
+
+            // Applica rotazione. Aggiungiamo 90 gradi (Math.PI/2) 
+            // perché di solito gli sprite guardano verso l'alto.
+            // Se la tua nave naviga "di traverso", cambia (entity.angle + Math.PI/2) in (entity.angle) o (entity.angle - Math.PI/2).
+            ctx.rotate(entity.angle + Math.PI/2); 
 
             // Scia d'acqua dietro la nave
             ctx.fillStyle = 'rgba(255,255,255,0.2)';
-            ctx.beginPath(); ctx.moveTo(-entity.radius, 0); ctx.lineTo(-entity.radius*2.5, -15); ctx.lineTo(-entity.radius*2.5, 15); ctx.fill();
+            ctx.beginPath(); 
+            ctx.moveTo(0, entity.radius); // Poppa (dopo la rotazione +90 gradi)
+            ctx.lineTo(-15, entity.radius * 2.5); 
+            ctx.lineTo(15, entity.radius * 2.5); 
+            ctx.fill();
 
-            // Cannoni fisici Laterali
+            // Disegna Cannoni fisici
             ctx.fillStyle = '#111';
             const cps = entity.cannonCount ? entity.cannonCount / 2 : (entity.type === 'pirate' ? 2 : 0);
             for(let i=0; i<cps; i++) {
                 const off = (i - (cps-1)/2) * 15;
-                ctx.fillRect(off - 4, -entity.radius - 4, 8, 12); // Sinistra
-                ctx.fillRect(off - 4, entity.radius - 8, 8, 12);  // Destra
+                // Posizionati lateralmente (asse X relativo allo sprite)
+                ctx.fillRect(-entity.radius - 4, off - 4, 8, 12); // Sinistra
+                ctx.fillRect(entity.radius - 4, off - 4, 8, 12);  // Destra
             }
 
-            // Scafo Principale (Galeone)
-            ctx.fillStyle = isNpc ? (entity.type === 'merchant' ? '#d35400' : '#8e44ad') : '#8b5a2b'; // Marrone legno
-            ctx.strokeStyle = '#3e2723'; ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.moveTo(-entity.radius, -entity.radius * 0.6); // Poppa
-            ctx.quadraticCurveTo(0, -entity.radius, entity.radius * 1.2, 0); // Fiancata Sn a Prua
-            ctx.quadraticCurveTo(0, entity.radius, -entity.radius, entity.radius * 0.6); // Fiancata Dx a Poppa
-            ctx.closePath();
-            ctx.fill(); ctx.stroke();
-
-            // Dettagli Ponte (Legno chiaro)
-            ctx.fillStyle = 'rgba(0,0,0,0.15)';
-            ctx.fillRect(-entity.radius*0.8, -entity.radius*0.3, entity.radius*1.5, entity.radius*0.6);
-
-            // Vele (Bianche/Grigie)
-            ctx.fillStyle = entity.color || '#ecf0f1'; // Se NPC usa grigio, se player usa suo colore
-            ctx.beginPath();
-            ctx.quadraticCurveTo(0, -entity.radius*0.8, entity.radius*0.5, 0);
-            ctx.quadraticCurveTo(0, entity.radius*0.8, -entity.radius*0.2, 0);
-            ctx.fill(); ctx.stroke();
-
+            // --- DISEGNO SPRITE NAVE ---
+            // Scaliamo l'immagine in base al raggio (così quando fai l'upgrade si ingrandisce!)
+            const spriteSize = entity.radius * 3.5; 
+            
+            // Disegna l'immagine centrandola
+            ctx.drawImage(shipSprite, -spriteSize / 2, -spriteSize / 2, spriteSize, spriteSize);
+            
+            // (Opzionale) Overlay di colore per distinguere i giocatori, disattivato per non rovinare lo sprite.
             ctx.restore();
 
-            // UI Sopra la nave
+            // UI Sopra la nave (Barra HP e Nome)
             ctx.fillStyle = '#c0392b'; ctx.fillRect(entity.x - 20, entity.y - entity.radius - 20, 40, 6);
             ctx.fillStyle = '#2ecc71'; ctx.fillRect(entity.x - 20, entity.y - entity.radius - 20, (entity.hp / (entity.maxHp||150)) * 40, 6);
-            if(!isNpc) { ctx.fillStyle = '#fff'; ctx.font = 'bold 12px Arial'; ctx.textAlign = 'center'; ctx.fillText(entity.name, entity.x, entity.y - entity.radius - 25); }
+            if(!isNpc) { 
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 12px Arial'; ctx.textAlign = 'center'; 
+                ctx.fillText(entity.name, entity.x, entity.y - entity.radius - 25); 
+            }
         }
 
         // ==========================================
@@ -200,12 +203,11 @@
         // ==========================================
         let minimapCache = null;
         function drawMinimapBase() {
-            // Pre-renderizziamo le isole sulla minimappa per non appesantire il loop
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = 200; tempCanvas.height = 200;
             const tCtx = tempCanvas.getContext('2d');
             const scale = 200 / MAP_SIZE;
-            tCtx.fillStyle = '#f1c40f'; // Isole Gialle
+            tCtx.fillStyle = '#f1c40f'; 
             for (let is of localIslands) {
                 tCtx.beginPath();
                 for (let i = 0; i < is.points.length; i++) {
@@ -224,7 +226,6 @@
             if(minimapCache) mCtx.drawImage(minimapCache, 0, 0);
             const scale = 200 / MAP_SIZE;
             
-            // Disegna Entità
             for(let id in state.npcs) {
                 mCtx.fillStyle = state.npcs[id].type === 'merchant' ? 'orange' : 'purple';
                 mCtx.fillRect(state.npcs[id].x * scale, state.npcs[id].y * scale, 3, 3);
@@ -244,8 +245,7 @@
                 ctx.save();
                 ctx.translate(canvas.width / 2 - myShip.x, canvas.height / 2 - myShip.y);
 
-                // Disegna Isole Vettoriali Irregolari
-                ctx.fillStyle = '#e3bc8d'; ctx.strokeStyle = '#27ae60'; ctx.lineWidth = 12; // Bordo verde spesso per vegetazione
+                ctx.fillStyle = '#e3bc8d'; ctx.strokeStyle = '#27ae60'; ctx.lineWidth = 12; 
                 for (let is of localIslands) {
                     ctx.beginPath();
                     for (let i = 0; i < is.points.length; i++) {
@@ -269,7 +269,12 @@
             }
             requestAnimationFrame(draw);
         }
-        draw();
+        
+        // Aspettiamo che lo sprite si carichi almeno in parte prima di lanciare il loop
+        shipSprite.onload = () => { draw(); };
+        // Fallback nel caso l'immagine ci metta troppo o non carichi
+        setTimeout(() => { requestAnimationFrame(draw); }, 1000);
+
         window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
     </script>
 </body>
