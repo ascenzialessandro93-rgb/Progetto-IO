@@ -10,11 +10,15 @@ const players = {};
 const islands = [];
 const bullets = [];
 const npcs = {};
+const resources = [];
 let npcIdCounter = 0;
+let resourceIdCounter = 0;
 
-// ==========================================
-// 1. SISTEMA UPGRADE E PREZZI
-// ==========================================
+// Variabili globali per Cicli ed Eventi dinamici
+let globalTicks = 0;
+let isNight = false;
+let specialTreasure = null;
+
 const UPGRADES = {
     hp_size: { maxLevel: 4, costs: [50, 150, 300, 600],  hp: [100, 150, 200, 300, 500], radius: [25, 28, 32, 38, 45] },
     damage:  { maxLevel: 3, costs: [100, 250, 500],      dmg: [20, 30, 45, 70] },
@@ -22,18 +26,15 @@ const UPGRADES = {
     speed:   { maxLevel: 3, costs: [80, 200, 400],       spd: [4.5, 5.2, 6.0, 7.5] }
 };
 
-// ==========================================
-// 2. GENERAZIONE ISOLE IRREGOLARI
-// ==========================================
+// Generazione Isole Irregolari
 function generateIslands() {
     let attempts = 0;
     while (islands.length < 50 && attempts < 1000) {
         attempts++;
-        const baseR = Math.random() * 150 + 100; // Isole belle grosse
+        const baseR = Math.random() * 150 + 100;
         const x = Math.random() * (MAP_SIZE - baseR * 3) + baseR * 1.5;
         const y = Math.random() * (MAP_SIZE - baseR * 3) + baseR * 1.5;
 
-        // Controllo Sovrapposizione Severo (Distanza > Raggio1 + Raggio2 + Margine)
         let overlap = false;
         for (let is of islands) {
             const dx = x - is.x; const dy = y - is.y;
@@ -41,14 +42,12 @@ function generateIslands() {
         }
 
         if (!overlap) {
-            // Genera la forma irregolare dell'isola (Poligono frastagliato)
-            const numPoints = 16; // Più punti = forma più complessa
+            const numPoints = 16;
             const points = [];
             let maxR = 0;
             
             for (let i = 0; i < numPoints; i++) {
                 const angle = (i / numPoints) * Math.PI * 2;
-                // Variazione random del raggio per creare insenature e penisole
                 const r = baseR + (Math.random() * 80 - 40);
                 if (r > maxR) maxR = r;
                 points.push({ angle, r });
@@ -59,23 +58,78 @@ function generateIslands() {
 }
 generateIslands();
 
-// ==========================================
-// 3. CONNESSIONI E LOGICA
-// ==========================================
+// Generazione Risorse Naturali (Relitti e Casse)
+function spawnResource() {
+    const r = 20;
+    const x = Math.random() * (MAP_SIZE - 400) + 200;
+    const y = Math.random() * (MAP_SIZE - 400) + 200;
+    resources.push({
+        id: 'res_' + resourceIdCounter++,
+        x, y, radius: r, amount: 200
+    });
+}
+for(let i = 0; i < 40; i++) spawnResource();
+
+// Funzione modulare per gestire la collisione e lo scivolamento sulle coste
+function handleIslandCollisions(entity) {
+    for (let is of islands) {
+        const dx = entity.x - is.x; const dy = entity.y - is.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        
+        if (dist < is.maxR + entity.radius) {
+            let angleToCenter = Math.atan2(dy, dx);
+            if (angleToCenter < 0) angleToCenter += Math.PI * 2;
+            
+            let islandR = is.maxR;
+            for (let i = 0; i < is.points.length; i++) {
+                let next = (i + 1) % is.points.length;
+                if (angleToCenter >= is.points[i].angle && (angleToCenter <= is.points[next].angle || next === 0)) {
+                    islandR = Math.max(is.points[i].r, is.points[next].r);
+                    break;
+                }
+            }
+
+            if (dist < islandR + entity.radius) {
+                const pushDist = (islandR + entity.radius) - dist;
+                entity.x += Math.cos(angleToCenter) * pushDist;
+                entity.y += Math.sin(angleToCenter) * pushDist;
+                
+                // Se è un NPC e sbatte contro un'isola, corregge la rotta per non bloccarsi
+                if (entity.id && entity.id.toString().startsWith('npc_')) {
+                    entity.angle += Math.PI / 4;
+                }
+            }
+        }
+    }
+}
+
 io.on('connection', (socket) => {
-    socket.on('joinGame', (username) => {
+    socket.on('joinGame', (data) => {
+        let username = "Capitano";
+        let crewTag = "";
+        
+        if (data && typeof data === 'object') {
+            username = data.username || "Capitano";
+            crewTag = (data.crew || "").trim().toUpperCase();
+        } else if (typeof data === 'string') {
+            username = data;
+        }
+
         players[socket.id] = {
-            id: socket.id, name: username || "Capitano",
+            id: socket.id, name: username, crew: crewTag,
             x: Math.random() * (MAP_SIZE - 400) + 200, y: Math.random() * (MAP_SIZE - 400) + 200,
             targetX: null, targetY: null, angle: 0,
             isDead: false, gold: 0, lastShotTime: 0,
-            // Livelli Upgrade
             upg: { hp_size: 0, damage: 0, cannons: 0, speed: 0 },
-            // Statistiche derivate
             hp: UPGRADES.hp_size.hp[0], maxHp: UPGRADES.hp_size.hp[0],
             radius: UPGRADES.hp_size.radius[0], speed: UPGRADES.speed.spd[0],
             cannonCount: UPGRADES.cannons.count[0], damage: UPGRADES.damage.dmg[0],
-            color: `hsl(${Math.random() * 360}, 70%, 50%)`
+            color: `hsl(${Math.random() * 360}, 70%, 50%)`,
+            skills: {
+                speedBoost: { activeUntil: 0 },
+                repair: { cd: 0 },
+                smokeScreen: { activeUntil: 0 }
+            }
         };
         socket.emit('initIslands', islands);
     });
@@ -88,22 +142,38 @@ io.on('connection', (socket) => {
 
     socket.on('shootCommand', () => {
         const p = players[socket.id];
-        if (p && !p.isDead && Date.now() - p.lastShotTime >= 2500) { // 2.5s ricarica
+        if (p && !p.isDead && Date.now() - p.lastShotTime >= 2500) {
             p.lastShotTime = Date.now();
             const cps = p.cannonCount / 2;
             for(let i=0; i<cps; i++) {
                 const offset = (i - (cps-1)/2) * 15; 
-                // Crea proiettili passando il danno del giocatore
                 const createBullet = (dirOffset) => {
                     bullets.push({
-                        id: Math.random(), playerId: socket.id, dmg: p.damage,
+                        id: Math.random(), playerId: socket.id, crew: p.crew, dmg: p.damage,
                         x: p.x + Math.cos(p.angle) * offset, y: p.y + Math.sin(p.angle) * offset,
                         vx: Math.cos(p.angle + dirOffset) * 12, vy: Math.sin(p.angle + dirOffset) * 12, life: 40
                     });
                 };
-                createBullet(Math.PI / 2);  // Tribordo
-                createBullet(-Math.PI / 2); // Babordo
+                createBullet(Math.PI / 2);  
+                createBullet(-Math.PI / 2); 
             }
+        }
+    });
+
+    socket.on('useSkill', (skillType) => {
+        const p = players[socket.id];
+        if (!p || p.isDead) return;
+        const now = Date.now();
+
+        if (skillType === 'speed' && (!p.skills.speedBoost.cd || p.skills.speedBoost.cd <= now)) {
+            p.skills.speedBoost.activeUntil = now + 4000; 
+            p.skills.speedBoost.cd = now + 12000;        
+        } else if (skillType === 'repair' && (!p.skills.repair.cd || p.skills.repair.cd <= now)) {
+            p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.3); 
+            p.skills.repair.cd = now + 15000;              
+        } else if (skillType === 'smoke' && (!p.skills.smokeScreen.cd || p.skills.smokeScreen.cd <= now)) {
+            p.skills.smokeScreen.activeUntil = now + 3000; 
+            p.skills.smokeScreen.cd = now + 18000;         
         }
     });
 
@@ -116,7 +186,6 @@ io.on('connection', (socket) => {
                 if (p.gold >= cost) {
                     p.gold -= cost;
                     p.upg[type]++;
-                    // Aggiorna le statistiche in base al nuovo livello
                     if(type === 'hp_size') { p.maxHp = UPGRADES.hp_size.hp[p.upg[type]]; p.hp = p.maxHp; p.radius = UPGRADES.hp_size.radius[p.upg[type]]; }
                     if(type === 'damage') p.damage = UPGRADES.damage.dmg[p.upg[type]];
                     if(type === 'cannons') p.cannonCount = UPGRADES.cannons.count[p.upg[type]];
@@ -129,37 +198,26 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => { delete players[socket.id]; });
 });
 
-// ==========================================
-// 4. LOOP FISICA (Collisioni Perfette)
-// ==========================================
+// Loop di fisica ed eventi ambientali (30fps)
 setInterval(() => {
+    globalTicks++;
     const now = Date.now();
-// --- COLLISIONI TRA NAVI (Giocatori e NPC) ---
-const allShips = [...Object.values(players).filter(p => !p.isDead), ...Object.values(npcs)];
 
-for (let i = 0; i < allShips.length; i++) {
-    for (let j = i + 1; j < allShips.length; j++) {
-        const s1 = allShips[i];
-        const s2 = allShips[j];
-        const dx = s2.x - s1.x;
-        const dy = s2.y - s1.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        const minDistance = s1.radius + s2.radius;
-
-        if (distance < minDistance && distance > 0) {
-            const overlap = minDistance - distance;
-            const nx = dx / distance; // Normale X
-            const ny = dy / distance; // Normale Y
-            
-            // Spingi le navi fuori in base alla loro dimensione
-            s1.x -= nx * (overlap / 2);
-            s1.y -= ny * (overlap / 2);
-            s2.x += nx * (overlap / 2);
-            s2.y += ny * (overlap / 2);
-        }
+    // Gestione Ciclo Giorno / Notte (Cambia ogni ~60 secondi)
+    if (globalTicks % 1800 === 0) {
+        isNight = !isNight;
     }
-}
-    // IA NPC Semplificata (Spawn se < 30)
+
+    // Evento Dinamico: Tesoro del Capitano (Nasce ogni ~100 secondi se raccolto)
+    if (!specialTreasure && globalTicks % 3000 === 0) {
+        specialTreasure = {
+            x: Math.random() * (MAP_SIZE - 2000) + 1000,
+            y: Math.random() * (MAP_SIZE - 2000) + 1000,
+            radius: 45, goldValue: 500
+        };
+    }
+
+    // Gestione IA e Spawning NPC
     if (Object.keys(npcs).length < 30) {
         let isPirate = Math.random() > 0.6;
         let id = 'npc_' + npcIdCounter++;
@@ -167,7 +225,7 @@ for (let i = 0; i < allShips.length; i++) {
             id, type: isPirate ? 'pirate' : 'merchant',
             x: Math.random() * (MAP_SIZE-600) + 300, y: Math.random() * (MAP_SIZE-600) + 300, angle: Math.random() * Math.PI*2,
             speed: isPirate ? 4 : 2.5, radius: isPirate ? 25 : 35,
-            hp: isPirate ? 150 : 250, isDead: false, goldValue: isPirate ? 40 : 100,
+            hp: isPirate ? 150 : 250, maxHp: isPirate ? 150 : 250, isDead: false, goldValue: isPirate ? 40 : 100,
             lastShotTime: 0, damage: 20
         };
     }
@@ -176,73 +234,95 @@ for (let i = 0; i < allShips.length; i++) {
         let n = npcs[id];
         n.x += Math.cos(n.angle) * n.speed; n.y += Math.sin(n.angle) * n.speed;
         if (n.x < 100 || n.x > MAP_SIZE - 100 || n.y < 100 || n.y > MAP_SIZE - 100) n.angle += Math.PI;
+
+        // RISOLTO: Ora anche i mercantili ed i pirati controllati dall'IA calcolano lo scivolamento sulle isole
+        handleIslandCollisions(n);
     }
 
-    // Movimento Giocatori e COLLISIONI ISOLE
+    // Gestione Giocatori
     for (let id in players) {
         const p = players[id];
         if (p.isDead) continue;
         
+        let currentSpeed = p.speed;
+        if (p.skills.speedBoost.activeUntil > now) {
+            currentSpeed *= 1.6; // Moltiplicatore abilità velocità
+        }
+
         if (p.targetX !== null && p.targetY !== null) {
             const dx = p.targetX - p.x; const dy = p.targetY - p.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist > 8) {
                 p.angle = Math.atan2(dy, dx);
-                p.x += (dx / dist) * p.speed;
-                p.y += (dy / dist) * p.speed;
+                p.x += (dx / dist) * currentSpeed;
+                p.y += (dy / dist) * currentSpeed;
             } else {
                 p.targetX = null; p.targetY = null;
             }
         }
 
-        // --- SISTEMA DI SCIVOLAMENTO COSTE ---
-        for (let is of islands) {
-            const dx = p.x - is.x; const dy = p.y - is.y;
-            const dist = Math.sqrt(dx*dx + dy*dy);
-            
-            // Broad-phase: È vicino all'isola?
-            if (dist < is.maxR + p.radius) {
-                let angleToCenter = Math.atan2(dy, dx);
-                if (angleToCenter < 0) angleToCenter += Math.PI * 2;
-                
-                // Trova il raggio esatto dell'isola a quell'angolo interpolando i punti
-                const points = is.points;
-                let islandR = is.maxR; // Fallback
-                for (let i = 0; i < points.length; i++) {
-                    let next = (i + 1) % points.length;
-                    if (angleToCenter >= points[i].angle && (angleToCenter <= points[next].angle || next === 0)) {
-                        // Semplificazione: prendiamo il raggio massimo tra i due punti vicini
-                        islandR = Math.max(points[i].r, points[next].r);
-                        break;
-                    }
-                }
+        handleIslandCollisions(p);
 
-                // Se la nave è dentro l'isola, la SPINGIAMO FUORI dolcemente (Scivolamento)
-                if (dist < islandR + p.radius) {
-                    const pushDist = (islandR + p.radius) - dist;
-                    p.x += Math.cos(angleToCenter) * pushDist;
-                    p.y += Math.sin(angleToCenter) * pushDist;
+        // Raccolta Risorse Naturali
+        for (let i = resources.length - 1; i >= 0; i--) {
+            const res = resources[i];
+            const dx = p.x - res.x; const dy = p.y - res.y;
+            if (Math.sqrt(dx*dx + dy*dy) < p.radius + res.radius) {
+                p.gold += 1; 
+                res.amount -= 1;
+                if (res.amount <= 0) {
+                    resources.splice(i, 1);
+                    spawnResource();
                 }
+            }
+        }
+
+        // Raccolta scrigno evento dinamico
+        if (specialTreasure) {
+            const tDx = p.x - specialTreasure.x; const tDy = p.y - specialTreasure.y;
+            if (Math.sqrt(tDx*tDx + tDy*tDy) < p.radius + specialTreasure.radius) {
+                p.gold += specialTreasure.goldValue;
+                specialTreasure = null;
             }
         }
     }
 
-    // Proiettili e Danni
+    // Collisioni Avanzate Nave-Nave (Giocatori + NPC)
+    const allShips = [...Object.values(players).filter(p => !p.isDead), ...Object.values(npcs)];
+    for (let i = 0; i < allShips.length; i++) {
+        for (let j = i + 1; j < allShips.length; j++) {
+            const s1 = allShips[i]; const s2 = allShips[j];
+            const dx = s2.x - s1.x; const dy = s2.y - s1.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const minDistance = s1.radius + s2.radius;
+
+            if (distance < minDistance && distance > 0) {
+                const overlap = minDistance - distance;
+                const nx = dx / distance; const ny = dy / distance;
+                s1.x -= nx * (overlap / 2); s1.y -= ny * (overlap / 2);
+                s2.x += nx * (overlap / 2); s2.y += ny * (overlap / 2);
+            }
+        }
+    }
+
+    // Proiettili e logica Danni (con Fuoco Amico disattivato per i membri dello stesso Clan)
     for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
         b.x += b.vx; b.y += b.vy; b.life--;
         let hit = false;
 
-        // Hit Giocatori
         for (let pid in players) {
             let p = players[pid];
             if (!p.isDead && pid !== b.playerId) {
+                // Se i giocatori condividono lo stesso tag ciurma, i colpi passano oltre senza arrecare danno
+                if (b.crew && b.crew === p.crew) continue;
+
                 let dx = b.x - p.x; let dy = b.y - p.y;
                 if (Math.sqrt(dx*dx + dy*dy) < p.radius) {
                     p.hp -= b.dmg; hit = true;
                     if (p.hp <= 0) {
                         p.isDead = true;
-                        if(players[b.playerId]) players[b.playerId].gold += 30; // Kill reward
+                        if(players[b.playerId]) players[b.playerId].gold += 150; 
                         setTimeout(() => { if(players[pid]){ p.hp = p.maxHp; p.isDead = false; p.x = Math.random()*MAP_SIZE; p.y = Math.random()*MAP_SIZE; } }, 4000);
                     }
                     break;
@@ -250,7 +330,6 @@ for (let i = 0; i < allShips.length; i++) {
             }
         }
 
-        // Hit NPC
         if (!hit) {
             for (let nid in npcs) {
                 let n = npcs[nid];
@@ -270,8 +349,22 @@ for (let i = 0; i < allShips.length; i++) {
         if (hit || b.life <= 0) bullets.splice(i, 1);
     }
 
-    io.emit('updateState', { players, npcs, bullets });
+    // Elaborazione della Leaderboard Real-time (Top 5)
+    const leaderboard = Object.values(players)
+        .sort((a, b) => b.gold - a.gold)
+        .slice(0, 5)
+        .map(p => ({ name: p.name, crew: p.crew, gold: p.gold }));
+
+    io.emit('updateState', { 
+        players, 
+        npcs, 
+        bullets, 
+        resources, 
+        isNight, 
+        specialTreasure,
+        leaderboard 
+    });
 }, 1000 / 30);
 
 const PORT = process.env.PORT || 3000;
-http.listen(PORT, () => console.log(`Oceano 8000x8000 online sulla porta ${PORT}`));
+http.listen(PORT, () => console.log(`Oceano Avanzato online sulla porta ${PORT}`));

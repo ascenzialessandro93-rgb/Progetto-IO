@@ -7,13 +7,13 @@
         body { margin: 0; overflow: hidden; background: #004a6b; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; }
         canvas { display: block; background: #005a82; }
         
-        #lobbyUI { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(10,10,15,0.95); padding: 50px; border-radius: 12px; text-align: center; color: white; border: 3px solid #f39c12; box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
-        #lobbyUI input { padding: 15px; width: 250px; font-size: 18px; margin-bottom: 20px; border-radius: 8px; border: none; text-align: center; }
-        #lobbyUI button { padding: 15px 30px; background: #f39c12; border: none; font-weight: bold; font-size: 18px; border-radius: 8px; cursor: pointer; color: #111; transition: 0.2s; }
+        #lobbyUI { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(10,10,15,0.95); padding: 40px; border-radius: 12px; text-align: center; color: white; border: 3px solid #f39c12; box-shadow: 0 10px 40px rgba(0,0,0,0.8); z-index: 10; }
+        #lobbyUI input { padding: 12px; width: 250px; font-size: 16px; margin-bottom: 15px; border-radius: 8px; border: none; text-align: center; }
+        #lobbyUI button { padding: 15px 30px; background: #f39c12; border: none; font-weight: bold; font-size: 18px; border-radius: 8px; cursor: pointer; color: #111; transition: 0.2s; width: 100%; }
         #lobbyUI button:hover { background: #e67e22; transform: scale(1.05); }
         
         /* UI DI GIOCO */
-        #gameUI { display: none; position: absolute; bottom: 0; left: 0; width: 100%; height: 110px; background: linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0.6)); border-top: 2px solid #f39c12; display: flex; justify-content: center; align-items: center; gap: 40px; }
+        #gameUI { display: none; position: absolute; bottom: 0; left: 0; width: 100%; height: 110px; background: linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0.6)); border-top: 2px solid #f39c12; display: flex; justify-content: center; align-items: center; gap: 40px; z-index: 5; }
         #statsBox { font-size: 24px; font-weight: bold; color: #f1c40f; display: flex; align-items: center; gap: 10px; background: rgba(0,0,0,0.5); padding: 15px 25px; border-radius: 10px; }
         
         #shopContainer { display: flex; gap: 15px; }
@@ -24,27 +24,52 @@
         .buy-btn:disabled { background: #555; color: #888; cursor: not-allowed; }
         
         /* MINIMAPPA */
-        #minimapBox { display: none; position: absolute; top: 20px; right: 20px; width: 200px; height: 200px; background: rgba(0,0,0,0.6); border: 3px solid #f39c12; border-radius: 50%; overflow: hidden; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
+        #minimapBox { display: none; position: absolute; top: 20px; right: 20px; width: 180px; height: 180px; background: rgba(0,0,0,0.6); border: 3px solid #f39c12; border-radius: 50%; overflow: hidden; box-shadow: 0 0 20px rgba(0,0,0,0.8); z-index: 5; }
         #minimapCanvas { width: 100%; height: 100%; }
         
-        /* NOTIFICHE */
-        #reloadBar { position: absolute; top: 50%; left: 50%; transform: translate(-50%, 50px); width: 100px; height: 6px; background: rgba(0,0,0,0.5); border-radius: 3px; display: none; }
+        /* BOX CLASSIFICA */
+        #leaderboardBox { display: none; position: absolute; top: 220px; right: 20px; width: 210px; background: rgba(10,10,15,0.85); border: 2px solid #f39c12; border-radius: 8px; padding: 12px; color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.5); z-index: 5; font-size: 14px; }
+        #leaderboardBox h3 { margin: 0 0 10px 0; font-size: 15px; text-align: center; color: #f39c12; text-transform: uppercase; border-bottom: 1px solid rgba(243,156,18,0.3); padding-bottom: 5px; }
+        .lb-entry { display: flex; justify-content: space-between; margin-bottom: 6px; font-weight: 500; }
+        
+        /* STRUTTURA BUSSOLA */
+        #compassBox { display: none; position: absolute; top: 20px; left: 20px; width: 65px; height: 65px; border: 3px solid #f39c12; border-radius: 50%; background: rgba(10,10,15,0.85); display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(0,0,0,0.6); z-index: 5; }
+        #compassNeedle { width: 4px; height: 45px; background: linear-gradient(to bottom, #e74c3c 50%, #ecf0f1 50%); border-radius: 2px; transform-origin: center center; }
+
+        /* INTERFACCIA DELLE ABILITÀ ATTIVE */
+        #skillsBox { display: none; position: absolute; bottom: 130px; left: 50%; transform: translateX(-50%); display: flex; gap: 15px; z-index: 5; }
+        .skill-card { background: rgba(10,10,15,0.9); border: 2px solid #f1c40f; border-radius: 8px; width: 85px; padding: 6px; text-align: center; color: white; font-size: 11px; font-weight: bold; }
+        .skill-key { display: block; background: #f1c40f; color: black; border-radius: 3px; font-size: 12px; margin-bottom: 4px; padding: 2px 0; }
+
+        /* COOLDOWN RICARICA CANNONI */
+        #reloadBar { position: absolute; top: 50%; left: 50%; transform: translate(-50%, 50px); width: 100px; height: 6px; background: rgba(0,0,0,0.5); border-radius: 3px; display: none; z-index: 5; }
         #reloadFill { width: 0%; height: 100%; background: #f1c40f; border-radius: 3px; transition: width 0.1s linear; }
     </style>
 </head>
 <body>
 
     <div id="lobbyUI">
-        <h1 style="color:#f39c12; margin-top:0; letter-spacing: 2px;">CORSARI .IO</h1>
-        <input type="text" id="usernameInput" placeholder="Scegli il tuo nome..."><br>
+        <h1 style="color:#f39c12; margin-top:0; letter-spacing: 2px; font-size: 32px; text-shadow: 0 3px 6px black;">CORSARI .IO</h1>
+        <input type="text" id="usernameInput" placeholder="Scegli il tuo nome..." maxlength="14"><br>
+        <input type="text" id="crewInput" placeholder="Tag Ciurma (Es: RM, GOLD)..." maxlength="4"><br>
         <button id="startButton">SALPA LE ANCORE</button>
     </div>
 
     <canvas id="gameCanvas" style="display:none;"></canvas>
-<div id="compass" style="position: absolute; top: 20px; left: 20px; width: 60px; height: 60px; border: 2px solid white; border-radius: 50%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; color: #f1c40f;">
-    <div id="compassNeedle" style="width: 2px; height: 40px; background: red; transform-origin: bottom center;"></div>
-</div>
-    <div id="minimapBox"><canvas id="minimapCanvas" width="200" height="200"></canvas></div>
+
+    <div id="compassBox"><div id="compassNeedle"></div></div>
+    <div id="minimapBox"><canvas id="minimapCanvas" width="180" height="180"></canvas></div>
+    
+    <div id="leaderboardBox">
+        <h3>Classifica</h3>
+        <div id="leaderboardContent"></div>
+    </div>
+
+    <div id="skillsBox">
+        <div class="skill-card"><span class="skill-key">[Q]</span>Vento ⛵</div>
+        <div class="skill-card"><span class="skill-key">[E]</span>Ripara 🛠️</div>
+        <div class="skill-card"><span class="skill-key">[R]</span>Fumo 🌫️</div>
+    </div>
 
     <div id="reloadBar"><div id="reloadFill"></div></div>
 
@@ -79,16 +104,12 @@
         const mCtx = mCanvas.getContext('2d');
         
         const MAP_SIZE = 8000;
-        let state = { players: {}, npcs: {}, bullets: [] };
+        let state = { players: {}, npcs: {}, bullets: [], resources: [], isNight: false, specialTreasure: null, leaderboard: [] };
         let localIslands = [];
 
-        // ==========================================
-        // CARICAMENTO SPRITE NAVE
-        // ==========================================
         const shipSprite = new Image();
         shipSprite.src = 'https://images-wixmp-ed30a86b8c4ca887773594c2.wixmp.com/f/02f7fc23-e1ad-4d3c-bf35-1c3d96f43d92/d68usui-ef6c334e-11b7-4f75-88b9-ecd34c5d4bf0.png?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1cm46YXBwOjdlMGQxODg5ODIyNjQzNzNhNWYwZDQxNWVhMGQyNmUwIiwiaXNzIjoidXJuOmFwcDo3ZTBkMTg4OTgyMjY0MzczYTVmMGQ0MTVlYTBkMjZlMCIsIm9iaiI6W1t7InBhdGgiOiIvZi8wMmY3ZmMyMy1lMWFkLTRkM2MtYmYzNS0xYzNkOTZmNDNkOTIvZDY4dXN1aS1lZjZjMzM0ZS0xMWI3LTRmNzUtODhiOS1lY2QzNGM1ZDRiZjAucG5nIn1dXSwiYXVkIjpbInVybjpzZXJ2aWNlOmZpbGUuZG93bmxvYWQiXX0.3kMXKaqZTAHsDV35EbNLNy4gihS47ZdXmNCv_p0zXAU';
 
-        // Tabella Costi per la UI
         const UPG_DATA = {
             hp_size: { max: 4, costs: [50, 150, 300, 600] },
             damage:  { max: 3, costs: [100, 250, 500] },
@@ -98,10 +119,19 @@
 
         document.getElementById('startButton').addEventListener('click', () => {
             document.getElementById('lobbyUI').style.display = 'none';
-            canvas.style.display = 'block'; document.getElementById('gameUI').style.display = 'flex';
+            canvas.style.display = 'block'; 
+            document.getElementById('gameUI').style.display = 'flex';
             document.getElementById('minimapBox').style.display = 'block';
+            document.getElementById('leaderboardBox').style.display = 'block';
+            document.getElementById('compassBox').style.display = 'flex';
+            document.getElementById('skillsBox').style.display = 'flex';
+            
             canvas.width = window.innerWidth; canvas.height = window.innerHeight;
-            socket.emit('joinGame', document.getElementById('usernameInput').value);
+            
+            socket.emit('joinGame', {
+                username: document.getElementById('usernameInput').value,
+                crew: document.getElementById('crewInput').value
+            });
         });
 
         window.buyUpg = function(type) { socket.emit('buyUpgrade', type); }
@@ -121,6 +151,10 @@
                     }, 100);
                 }
             }
+            // Keybinding delle abilità
+            if (e.code === 'KeyQ') socket.emit('useSkill', 'speed');
+            if (e.code === 'KeyE') socket.emit('useSkill', 'repair');
+            if (e.code === 'KeyR') socket.emit('useSkill', 'smoke');
         });
 
         window.addEventListener('click', (e) => {
@@ -149,66 +183,80 @@
                     btn.disabled = p.gold < cost;
                 }
             }
+
+            // Rendering Classifica
+            let lbHtml = "";
+            if (state.leaderboard) {
+                state.leaderboard.forEach((entry, index) => {
+                    const tag = entry.crew ? `[${entry.crew}] ` : "";
+                    lbHtml += `<div class="lb-entry"><span>${index+1}. ${tag}${entry.name}</span><span>💰${entry.gold}</span></div>`;
+                });
+            }
+            document.getElementById('leaderboardContent').innerHTML = lbHtml;
+
+            // RISOLTO: Logica della Bussola orientata perfettamente al centro della mappa
+            const dx = (MAP_SIZE / 2) - p.x;
+            const dy = (MAP_SIZE / 2) - p.y;
+            const angleToCenter = Math.atan2(dy, dx);
+            document.getElementById('compassNeedle').style.transform = `rotate(${angleToCenter + Math.PI/2}rad)`;
         }
 
-        // ==========================================
-        // DISEGNO NAVE CON SPRITE IMAGE
-        // ==========================================
         function drawShip(entity, isNpc = false) {
+            // Se un'altra nave usa "Cortina di Fumo" (Stealth), scompare dalla vista degli altri
+            const now = Date.now();
+            if (entity.skills && entity.skills.smokeScreen && entity.skills.smokeScreen.activeUntil > now && entity.id !== socket.id) {
+                return;
+            }
+
             ctx.save();
             ctx.translate(entity.x, entity.y);
 
-            // Applica rotazione. Aggiungiamo 90 gradi (Math.PI/2) 
-            // perché di solito gli sprite guardano verso l'alto.
-            // Se la tua nave naviga "di traverso", cambia (entity.angle + Math.PI/2) in (entity.angle) o (entity.angle - Math.PI/2).
+            // RISOLTO: Invertito lo sprite di 180° (+ Math.PI) per impedire l'effetto retromarcia
             ctx.rotate(entity.angle + Math.PI/2 + Math.PI); 
 
-            // Scia d'acqua dietro la nave
+            // Scia
             ctx.fillStyle = 'rgba(255,255,255,0.2)';
             ctx.beginPath(); 
-            ctx.moveTo(0, entity.radius); // Poppa (dopo la rotazione +90 gradi)
+            ctx.moveTo(0, entity.radius); 
             ctx.lineTo(-15, entity.radius * 2.5); 
             ctx.lineTo(15, entity.radius * 2.5); 
             ctx.fill();
 
-            // Disegna Cannoni fisici
+            // Cannoni fisici
             ctx.fillStyle = '#111';
-            const cps = entity.cannonCount ? entity.cannonCount / 2 : (entity.type === 'pirate' ? 2 : 0);
+            const cps = entity.cannonCount ? entity.cannonCount / 2 : (entity.type === 'pirate' ? 2 : 1);
             for(let i=0; i<cps; i++) {
                 const off = (i - (cps-1)/2) * 15;
-                // Posizionati lateralmente (asse X relativo allo sprite)
-                ctx.fillRect(-entity.radius - 4, off - 4, 8, 12); // Sinistra
-                ctx.fillRect(entity.radius - 4, off - 4, 8, 12);  // Destra
+                ctx.fillRect(-entity.radius - 4, off - 4, 8, 12); 
+                ctx.fillRect(entity.radius - 4, off - 4, 8, 12);  
             }
 
-            // --- DISEGNO SPRITE NAVE ---
-            // Scaliamo l'immagine in base al raggio (così quando fai l'upgrade si ingrandisce!)
             const spriteSize = entity.radius * 3.5; 
             
-            // Disegna l'immagine centrandola
+            // Effetto Trasparenza se siamo noi ad usare la cortina di fumo
+            if (entity.id === socket.id && entity.skills && entity.skills.smokeScreen && entity.skills.smokeScreen.activeUntil > now) {
+                ctx.globalAlpha = 0.4;
+            }
+
             ctx.drawImage(shipSprite, -spriteSize / 2, -spriteSize / 2, spriteSize, spriteSize);
-            
-            // (Opzionale) Overlay di colore per distinguere i giocatori, disattivato per non rovinare lo sprite.
             ctx.restore();
 
-            // UI Sopra la nave (Barra HP e Nome)
+            // HP e Nomi
             ctx.fillStyle = '#c0392b'; ctx.fillRect(entity.x - 20, entity.y - entity.radius - 20, 40, 6);
             ctx.fillStyle = '#2ecc71'; ctx.fillRect(entity.x - 20, entity.y - entity.radius - 20, (entity.hp / (entity.maxHp||150)) * 40, 6);
-            if(!isNpc) { 
-                ctx.fillStyle = '#fff'; ctx.font = 'bold 12px Arial'; ctx.textAlign = 'center'; 
-                ctx.fillText(entity.name, entity.x, entity.y - entity.radius - 25); 
-            }
+            
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 12px Arial'; ctx.textAlign = 'center'; 
+            const displayTag = entity.crew ? `[${entity.crew}] ` : "";
+            const displayName = isNpc ? (entity.type === 'merchant' ? 'Mercantile AI' : 'Pirata NPC') : displayTag + entity.name;
+            ctx.fillText(displayName, entity.x, entity.y - entity.radius - 25); 
         }
 
-        // ==========================================
-        // DISEGNO MINIMAPPA
-        // ==========================================
         let minimapCache = null;
         function drawMinimapBase() {
             const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = 200; tempCanvas.height = 200;
+            tempCanvas.width = 180; tempCanvas.height = 180;
             const tCtx = tempCanvas.getContext('2d');
-            const scale = 200 / MAP_SIZE;
+            const scale = 180 / MAP_SIZE;
             tCtx.fillStyle = '#f1c40f'; 
             for (let is of localIslands) {
                 tCtx.beginPath();
@@ -224,18 +272,28 @@
         }
 
         function drawMinimap() {
-            mCtx.clearRect(0,0,200,200);
+            mCtx.clearRect(0,0,180,180);
             if(minimapCache) mCtx.drawImage(minimapCache, 0, 0);
-            const scale = 200 / MAP_SIZE;
+            const scale = 180 / MAP_SIZE;
             
             for(let id in state.npcs) {
                 mCtx.fillStyle = state.npcs[id].type === 'merchant' ? 'orange' : 'purple';
                 mCtx.fillRect(state.npcs[id].x * scale, state.npcs[id].y * scale, 3, 3);
             }
+            const myShip = state.players[socket.id];
             for(let id in state.players) {
                 if(state.players[id].isDead) continue;
-                mCtx.fillStyle = id === socket.id ? '#2ecc71' : '#e74c3c';
-                mCtx.beginPath(); mCtx.arc(state.players[id].x * scale, state.players[id].y * scale, id === socket.id ? 4 : 3, 0, Math.PI*2); mCtx.fill();
+                const p = state.players[id];
+                if (id === socket.id) mCtx.fillStyle = '#2ecc71';
+                else if (myShip && myShip.crew && myShip.crew === p.crew) mCtx.fillStyle = '#3498db'; // Membri ciurma in Azzurro
+                else mCtx.fillStyle = '#e74c3c';
+                
+                mCtx.beginPath(); mCtx.arc(p.x * scale, p.y * scale, id === socket.id ? 4 : 3, 0, Math.PI*2); mCtx.fill();
+            }
+
+            if (state.specialTreasure) {
+                mCtx.fillStyle = '#f1c40f';
+                mCtx.beginPath(); mCtx.arc(state.specialTreasure.x * scale, state.specialTreasure.y * scale, 5, 0, Math.PI*2); mCtx.fill();
             }
         }
 
@@ -246,10 +304,8 @@
             if (myShip) {
                 ctx.save();
                 ctx.translate(canvas.width / 2 - myShip.x, canvas.height / 2 - myShip.y);
-                const dx = (MAP_SIZE / 2) - myShip.x;
-                const dy = (MAP_SIZE / 2) - myShip.y;
-                const angleToCenter = Math.atan2(dy, dx);
-                document.getElementById('compassNeedle').style.transform = `rotate(${angleToCenter + Math.PI/2}rad)`;
+
+                // Isole
                 ctx.fillStyle = '#e3bc8d'; ctx.strokeStyle = '#27ae60'; ctx.lineWidth = 12; 
                 for (let is of localIslands) {
                     ctx.beginPath();
@@ -263,21 +319,66 @@
                     ctx.fill(); ctx.stroke();
                 }
 
-                for (let id in state.npcs) drawShip(state.npcs[id], true);
-                for (let id in state.players) { if (!state.players[id].isDead) drawShip(state.players[id], false); }
+                // Risorse Naturali (Relitti)
+                if (state.resources) {
+                    state.resources.forEach(res => {
+                        // Nebbia di guerra client-side (non calcola entità fuori schermo/raggio visivo)
+                        if (Math.hypot(res.x - myShip.x, res.y - myShip.y) > 1100) return;
+                        ctx.fillStyle = '#a0522d';
+                        ctx.beginPath(); ctx.arc(res.x, res.y, res.radius, 0, Math.PI * 2); ctx.fill();
+                        ctx.fillStyle = '#f1c40f';
+                        ctx.beginPath(); ctx.arc(res.x, res.y, res.radius * 0.4, 0, Math.PI * 2); ctx.fill();
+                    });
+                }
 
+                // Scrigno dell'evento speciale
+                if (state.specialTreasure) {
+                    const res = state.specialTreasure;
+                    ctx.fillStyle = '#d35400';
+                    ctx.fillRect(res.x - res.radius, res.y - res.radius, res.radius*2, res.radius*2);
+                    ctx.fillStyle = '#f1c40f'; ctx.font = 'bold 14px Arial'; ctx.textAlign = 'center';
+                    ctx.fillText("TESORO DEL CAPITANO", res.x, res.y - res.radius - 8);
+                }
+
+                // Entità (Giocatori e NPC) filtrate dalla Nebbia di Guerra
+                for (let id in state.npcs) {
+                    if (Math.hypot(state.npcs[id].x - myShip.x, state.npcs[id].y - myShip.y) <= 1100) {
+                        drawShip(state.npcs[id], true);
+                    }
+                }
+                for (let id in state.players) { 
+                    if (!state.players[id].isDead && Math.hypot(state.players[id].x - myShip.x, state.players[id].y - myShip.y) <= 1100) {
+                        drawShip(state.players[id], false); 
+                    }
+                }
+
+                // Proiettili
                 ctx.fillStyle = '#222';
-                for (let b of state.bullets) { ctx.beginPath(); ctx.arc(b.x, b.y, 5, 0, Math.PI * 2); ctx.fill(); }
+                for (let b of state.bullets) { 
+                    if (Math.hypot(b.x - myShip.x, b.y - myShip.y) <= 1100) {
+                        ctx.beginPath(); ctx.arc(b.x, b.y, 5, 0, Math.PI * 2); ctx.fill(); 
+                    }
+                }
                 ctx.restore();
                 
+                // RENDERING DEL COPERTURATO DELLA NEBBIA DI GUERRA E CICLO NOTTE
+                const fogGrad = ctx.createRadialGradient(canvas.width/2, canvas.height/2, 450, canvas.width/2, canvas.height/2, 1100);
+                if (state.isNight) {
+                    fogGrad.addColorStop(0, 'rgba(0, 12, 30, 0.35)');
+                    fogGrad.addColorStop(1, 'rgba(0, 4, 12, 0.96)');
+                } else {
+                    fogGrad.addColorStop(0, 'rgba(0,0,0,0)');
+                    fogGrad.addColorStop(1, 'rgba(0, 45, 65, 0.88)');
+                }
+                ctx.fillStyle = fogGrad;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
                 drawMinimap();
             }
             requestAnimationFrame(draw);
         }
         
-        // Aspettiamo che lo sprite si carichi almeno in parte prima di lanciare il loop
         shipSprite.onload = () => { draw(); };
-        // Fallback nel caso l'immagine ci metta troppo o non carichi
         setTimeout(() => { requestAnimationFrame(draw); }, 1000);
 
         window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
