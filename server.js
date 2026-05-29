@@ -142,4 +142,75 @@ setInterval(() => {
                     if (hitIsland) break;
                 }
                 if (hitIsland) {
-                    p.x = prevX; p.y =
+                    p.x = prevX; p.y = prevY;
+                    p.targetX = null; p.targetY = null;
+                }
+            } else {
+                p.targetX = null; p.targetY = null;
+            }
+        }
+    }
+
+    // 2. Aggiorna Proiettili e Collisioni Danni
+    for (let i = bullets.length - 1; i >= 0; i--) {
+        const b = bullets[i];
+        b.x += b.vx;
+        b.y += b.vy;
+        b.life--;
+
+        let bulletRemoved = false;
+
+        // Collisione proiettili con Isole
+        for (let island of islands) {
+            for (let circle of island.circles) {
+                const dx = b.x - circle.x;
+                const dy = b.y - circle.y;
+                if (Math.sqrt(dx*dx + dy*dy) < circle.radius) {
+                    bullets.splice(i, 1);
+                    bulletRemoved = true;
+                    break;
+                }
+            }
+            if (bulletRemoved) break;
+        }
+        if (bulletRemoved) continue;
+
+        // Collisione proiettili con Navi nemiche
+        for (let id in players) {
+            const target = players[id];
+            if (target.isDead || id === b.playerId) continue;
+
+            const dx = b.x - target.x;
+            const dy = b.y - target.y;
+            if (Math.sqrt(dx*dx + dy*dy) < target.radius) {
+                target.hp -= 15; // Danno del cannone
+                bullets.splice(i, 1);
+                bulletRemoved = true;
+
+                if (target.hp <= 0) {
+                    target.isDead = true;
+                    target.targetX = null; target.targetY = null;
+                    // Respawn automatico dopo 4 secondi
+                    setTimeout(() => {
+                        if (players[id]) {
+                            players[id].hp = 100;
+                            players[id].isDead = false;
+                            players[id].x = Math.random() * (MAP_SIZE - 200) + 100;
+                            players[id].y = Math.random() * (MAP_SIZE - 200) + 100;
+                        }
+                    }, 4000);
+                }
+                break;
+            }
+        }
+
+        if (!bulletRemoved && b.life <= 0) {
+            bullets.splice(i, 1);
+        }
+    }
+
+    io.emit('updateState', { players, bullets });
+}, 1000 / 30);
+
+const PORT = process.env.PORT || 3000;
+http.listen(PORT, () => console.log(`Server veleggiante sulla porta ${PORT}`));
