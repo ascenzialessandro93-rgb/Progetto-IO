@@ -149,7 +149,7 @@
         const mCtx = mCanvas.getContext('2d');
         
         // --- Texture Assets ---
-        const waterTexture = new Image(); waterTexture.src = '/https://i.postimg.cc/Vr3Y8xXw/water.png';
+        const waterTexture = new Image(); waterTexture.src = 'https://i.postimg.cc/Vr3Y8xXw/water.png';
         const islandTexture = new Image(); islandTexture.src = 'https://i.postimg.cc/hzHSBkVW/isle.png';
         const krakenSprite = new Image(); krakenSprite.src = 'https://i.postimg.cc/jdLL2smF/58744aa8-6a18-422e-a6c3-a6d5cb8c1eb8.png';
         // ----------------------
@@ -388,16 +388,19 @@
             if (myShip) {
                 const offsetX = canvas.width / 2 - myShip.x;
                 const offsetY = canvas.height / 2 - myShip.y;
-                if (waterTexture.complete) {
-                    ctx.fillStyle = ctx.createPattern(waterTexture, 'repeat');
-                    ctx.save();
-                    ctx.translate(- (myShip.x % 100), - (myShip.y % 100)); // Parallasse opzionale
-                    ctx.fillRect(-canvas.width, -canvas.height, canvas.width * 3, canvas.height * 3);
-                    ctx.restore();
-                } else {
-                    ctx.fillStyle = '#005a82';
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
-                }
+                if (
+    waterTexture.complete &&
+    waterTexture.naturalWidth > 0
+) {
+    const pattern = ctx.createPattern(waterTexture, 'repeat');
+    if (pattern) {
+        ctx.fillStyle = pattern;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+} else {
+    ctx.fillStyle = '#005a82';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
             }
 
             if (myShip) {
