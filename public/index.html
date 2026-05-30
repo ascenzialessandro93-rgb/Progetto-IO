@@ -159,7 +159,40 @@
         let localIslands = [];
         
         let particles = [];
-        let screenShake = 0;
+        let screenShake   = 0;
+
+        // ── Cache rendering — evitano allocazioni nel hot path ─────────
+        let _waterPattern = null;   // pattern acqua creato una sola volta
+        waterTexture.onload = () => { _waterPattern = null; };   // reset se ricarica
+
+        // Fog gradient cached per giorno e notte (ricreato solo al resize/fov change)
+        const _fogCache = { day: null, night: null, fov: -1, w: -1, h: -1 };
+        function getFogGrad(fov) {
+            const w = canvas.width, h = canvas.height;
+            if (_fogCache.fov !== fov || _fogCache.w !== w || _fogCache.h !== h) {
+                _fogCache.day = null; _fogCache.night = null;
+                _fogCache.fov = fov; _fogCache.w = w; _fogCache.h = h;
+            }
+            if (state.isNight && !_fogCache.night) {
+                const g = ctx.createRadialGradient(w/2, h/2, fov/2.5, w/2, h/2, fov);
+                g.addColorStop(0, 'rgba(0,12,30,0.35)'); g.addColorStop(1, 'rgba(0,4,12,0.98)');
+                _fogCache.night = g;
+            } else if (!state.isNight && !_fogCache.day) {
+                const g = ctx.createRadialGradient(w/2, h/2, fov/2.5, w/2, h/2, fov);
+                g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,45,65,0.88)');
+                _fogCache.day = g;
+            }
+            return state.isNight ? _fogCache.night : _fogCache.day;
+        }
+
+        // isVisible: AABB test — risolto fuori dal frame, aggiornato ogni draw()
+        let _visHalfW = 0, _visHalfH = 0, _visCx = 0, _visCy = 0;
+        function isVisible(wx, wy) {
+            return Math.abs(wx - _visCx) <= _visHalfW && Math.abs(wy - _visCy) <= _visHalfH;
+        }
+
+        // Minimap throttle: ridisegno a ~5 Hz (ogni 12 frame a 60fps)
+        let _minimapFrame = 0;
         let isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
 
         const shipSprite = new Image();
@@ -241,7 +274,7 @@
                 jKnob.style.left = `${x + 40}px`; jKnob.style.top = `${y + 40}px`;
                 
                 const myShip = state.players[socket.id];
-                if (myShip) socket.emit('moveCommand', { x: myShip.x + x*10, y: myShip.y + y*10 });
+                if (myShip) socket.emit('moveCommand', { x: (myShip.renderX || myShip.x) + x*10, y: (myShip.renderY || myShip.y) + y*10 });
             }
         }
 
@@ -249,7 +282,8 @@
             if(e.clientY > window.innerHeight - 120 || isMobile || document.activeElement === chatInput) return; 
             if (!state.players[socket.id] || state.players[socket.id].isDead) return;
             const myShip = state.players[socket.id];
-            socket.emit('moveCommand', { x: e.clientX - canvas.width/2 + myShip.x, y: e.clientY - canvas.height/2 + myShip.y });
+            // Usa renderX/renderY (posizione camera interpolata) per la conversione schermo→mondo
+            socket.emit('moveCommand', { x: e.clientX - canvas.width/2 + (myShip.renderX || myShip.x), y: e.clientY - canvas.height/2 + (myShip.renderY || myShip.y) });
         });
 
         socket.on('effect', (data) => {
@@ -277,47 +311,32 @@
         // Convertiamo in mappa indicizzata per id e preserviamo renderX/renderY
         // tra un aggiornamento e l'altro.
 
+        // ── updateState — server_pro emette SEMPRE array per players e npcs ──
+        // Network tick: 20 Hz → lerp a 0.18 per interpolazione ancora fluida.
         socket.on('updateState', (newState) => {
-            // Converti array players → mappa per id (DTO server ottimizzato)
+            // Players: array → mappa per id, preserve renderX/renderY
             const newPlayers = {};
-            if (Array.isArray(newState.players)) {
-                for (const p of newState.players) {
-                    const prev = state.players[p.id];
-                    // Preserva renderX/renderY dall'aggiornamento precedente
-                    p.renderX = prev ? prev.renderX : p.x;
-                    p.renderY = prev ? prev.renderY : p.y;
-                    newPlayers[p.id] = p;
-                }
-            } else {
-                // fallback: server non ottimizzato (oggetto)
-                for (const id in newState.players) {
-                    const p = newState.players[id];
-                    const prev = state.players[id];
-                    p.renderX = prev ? prev.renderX : p.x;
-                    p.renderY = prev ? prev.renderY : p.y;
-                    newPlayers[id] = p;
-                }
+            const pArr = newState.players;
+            for (let i = 0; i < pArr.length; i++) {
+                const p    = pArr[i];
+                const prev = state.players[p.id];
+                p.renderX  = prev ? prev.renderX : p.x;
+                p.renderY  = prev ? prev.renderY : p.y;
+                newPlayers[p.id] = p;
             }
 
-            // Converti array npcs → mappa per id
+            // NPCs: array → mappa per id, preserve renderX/renderY
             const newNpcs = {};
-            if (Array.isArray(newState.npcs)) {
-                for (const n of newState.npcs) {
-                    const prev = state.npcs[n.id];
-                    n.renderX = prev ? prev.renderX : n.x;
-                    n.renderY = prev ? prev.renderY : n.y;
-                    newNpcs[n.id] = n;
-                }
-            } else {
-                for (const id in newState.npcs) {
-                    const n = newState.npcs[id];
-                    const prev = state.npcs[id];
-                    n.renderX = prev ? prev.renderX : n.x;
-                    n.renderY = prev ? prev.renderY : n.y;
-                    newNpcs[id] = n;
-                }
+            const nArr = newState.npcs;
+            for (let i = 0; i < nArr.length; i++) {
+                const n    = nArr[i];
+                const prev = state.npcs[n.id];
+                n.renderX  = prev ? prev.renderX : n.x;
+                n.renderY  = prev ? prev.renderY : n.y;
+                newNpcs[n.id] = n;
             }
 
+            // Risorse: array diretto (il server le invia già filtrate per VIEW_DISTANCE)
             state = { ...newState, players: newPlayers, npcs: newNpcs };
             updateUI();
         });
@@ -325,87 +344,125 @@
         function updateUI() {
             const p = state.players[socket.id];
             if (!p) return;
-            // MOD 3: gold e upg arrivano in myData (campo privato per il destinatario)
-            const my = state.myData || {};
 
+            // myData: dati privati inviati solo al destinatario dal server_pro
+            const my  = state.myData || {};
+            const now = Date.now();
+
+            // Gold (arrotondato per evitare float residui da calcoli server)
             if (my.gold !== undefined)
-                document.getElementById('goldAmount').innerText = my.gold;
-            
+                document.getElementById('goldAmount').innerText = my.gold | 0;
+
+            // Pulsanti upgrade
             if (my.upg) {
-                for(let key in UPG_DATA) {
+                for (let key in UPG_DATA) {
                     const btn = document.getElementById('btn_' + key);
                     const lvl = my.upg[key];
-                    if (lvl >= UPG_DATA[key].max) { btn.innerText = "MAX"; btn.disabled = true; }
-                    else { const cost = UPG_DATA[key].costs[lvl]; btn.innerText = `LVL ${lvl+1} (${cost}G)`; btn.disabled = my.gold < cost; }
+                    if (lvl >= UPG_DATA[key].max) {
+                        btn.innerText = "MAX"; btn.disabled = true;
+                    } else {
+                        const cost = UPG_DATA[key].costs[lvl];
+                        btn.innerText = `LVL ${lvl+1} (${cost}G)`;
+                        btn.disabled  = (my.gold | 0) < cost;
+                    }
                 }
             }
 
-            let lbHtml = "";
-            if (state.leaderboard) {
-                state.leaderboard.forEach((entry, index) => {
-                    const tag = entry.crew ? `[${entry.crew}] ` : "";
-                    lbHtml += `<div class="lb-entry"><span>${index+1}. ${tag}${entry.name}</span><span>💰${entry.gold}</span></div>`;
-                });
+            // Cooldown skill — aggiorna l'icona del pulsante mobile
+            // server_pro: speedBoost = { activeUntil, cd }, repair = { cd }, smokeScreen = { activeUntil, cd }
+            if (my.skills) {
+                const sk      = my.skills;
+                const mobSkill = document.getElementById('mobBtnSkill');
+                if (mobSkill) {
+                    const cdRemaining = Math.max(0, (sk.speedBoost.cd - now) / 1000);
+                    mobSkill.textContent = cdRemaining > 0 ? `${cdRemaining.toFixed(0)}s` : '💨';
+                    mobSkill.style.opacity = cdRemaining > 0 ? '0.5' : '1';
+                }
             }
-            document.getElementById('leaderboardContent').innerHTML = lbHtml;
 
+            // Leaderboard — ricostruita solo se il contenuto è cambiato
+            if (state.leaderboard && state.leaderboard.length > 0) {
+                let lbHtml = '';
+                for (let i = 0; i < state.leaderboard.length; i++) {
+                    const entry = state.leaderboard[i];
+                    const tag   = entry.crew ? `[${entry.crew}] ` : '';
+                    lbHtml += `<div class="lb-entry"><span>${i+1}. ${tag}${entry.name}</span><span>💰${entry.gold}</span></div>`;
+                }
+                // Aggiorna il DOM solo se diverso → evita reflow inutili
+                const lbEl = document.getElementById('leaderboardContent');
+                if (lbEl.innerHTML !== lbHtml) lbEl.innerHTML = lbHtml;
+            }
+
+            // Bussola
             const angleToCenter = Math.atan2((MAP_SIZE / 2) - p.y, (MAP_SIZE / 2) - p.x);
             document.getElementById('compassNeedle').style.transform = `rotate(${angleToCenter + Math.PI/2}rad)`;
         }
 
         function drawShip(entity, isNpc = false) {
-            const now = Date.now();
-            // MOD 3: skills non è nel DTO generico. Per gli altri player semplicemente
-            // non applichiamo smoke (il server esclude già le navi in smoke dalla visibilità).
-            // Per il proprio player leggiamo da state.myData.
+            const now      = Date.now();
             const mySkills = state.myData && state.myData.skills;
-            if (entity.id === socket.id && mySkills?.smokeScreen?.activeUntil > now) {
-                // Il proprio player in fumo: continua ma trasparente (gestito sotto)
-            } else if (!isNpc && entity.id !== socket.id) {
-                // Altri player: il server già non li manda se sono in smoke
-            }
 
-            // MOD 7: usa renderX/renderY (interpolati) per la posizione di disegno
+            // renderX/renderY: interpolati nel loop draw() — usa come posizione di rendering
             const rx = entity.renderX !== undefined ? entity.renderX : entity.x;
             const ry = entity.renderY !== undefined ? entity.renderY : entity.y;
 
             ctx.save();
             ctx.translate(rx, ry);
-            ctx.rotate(entity.angle + Math.PI/2 + Math.PI);
+            ctx.rotate(entity.angle + Math.PI / 2 + Math.PI);
 
-            ctx.fillStyle = 'rgba(255,255,255,0.2)';
-            ctx.beginPath(); ctx.moveTo(0, entity.radius); ctx.lineTo(-15, entity.radius * 2.5); ctx.lineTo(15, entity.radius * 2.5); ctx.fill();
+            // Scia della nave
+            ctx.fillStyle = 'rgba(255,255,255,0.15)';
+            ctx.beginPath();
+            ctx.moveTo(0, entity.radius);
+            ctx.lineTo(-15, entity.radius * 2.5);
+            ctx.lineTo(15,  entity.radius * 2.5);
+            ctx.fill();
 
+            // Cannoni — server_pro: cannonCount nel DTO player e NPC
             ctx.fillStyle = '#111';
-            let cps = entity.cannonCount ? entity.cannonCount / 2 : (entity.type === 'pirate' ? 2 : 1);
-            if(entity.shipClass === 'galleon') cps += 1;
-            
-            for(let i=0; i<cps; i++) {
-                const off = (i - (cps-1)/2) * 15;
+            let cps = entity.cannonCount ? (entity.cannonCount >> 1) : (entity.type === 'pirate' ? 2 : 1);
+            if (entity.shipClass === 'galleon') cps++;
+            for (let i = 0; i < cps; i++) {
+                const off = (i - (cps - 1) * 0.5) * 15;
                 ctx.fillRect(-entity.radius - 4, off - 4, 8, 12);
-                ctx.fillRect(entity.radius - 4, off - 4, 8, 12);
+                ctx.fillRect( entity.radius - 4, off - 4, 8, 12);
             }
 
+            // Sprite nave
             const spriteSize = entity.radius * 3.5;
-            // Smoke semi-trasparente per il proprio player
-            if (entity.id === socket.id && mySkills?.smokeScreen?.activeUntil > now) ctx.globalAlpha = 0.4;
-            
-            if (entity.shipClass === 'galleon') ctx.filter = 'hue-rotate(90deg)';
-            if (entity.shipClass === 'clipper') ctx.filter = 'hue-rotate(200deg)';
-            
+
+            // Smoke: semi-trasparente per il proprio player
+            if (entity.id === socket.id && mySkills?.smokeScreen?.activeUntil > now) {
+                ctx.globalAlpha = 0.4;
+            }
+
+            // Colore classe — IMPORTANTE: resetta ctx.filter dopo drawImage
+            // altrimenti il filter "buca" il ctx.restore() e contamina le entità successive
+            if      (entity.shipClass === 'galleon') ctx.filter = 'hue-rotate(90deg)';
+            else if (entity.shipClass === 'clipper') ctx.filter = 'hue-rotate(200deg)';
+
             ctx.drawImage(shipSprite, -spriteSize / 2, -spriteSize / 2, spriteSize, spriteSize);
+            ctx.filter = 'none';   // FIX: reset esplicito del filter prima del restore
+
             ctx.restore();
 
-            // Barra HP e nome: posizionati su renderX/renderY
+            // Barra HP (fuori dal save/restore per performance)
+            const hpRatio = entity.hp / (entity.maxHp || 150);
             ctx.fillStyle = '#c0392b'; ctx.fillRect(rx - 20, ry - entity.radius - 20, 40, 6);
-            ctx.fillStyle = '#2ecc71'; ctx.fillRect(rx - 20, ry - entity.radius - 20, (entity.hp / (entity.maxHp||150)) * 40, 6);
-            
-            ctx.fillStyle = '#fff'; ctx.font = 'bold 12px Arial'; ctx.textAlign = 'center';
-            const displayTag  = entity.crew ? `[${entity.crew}] ` : "";
-            const displayName = isNpc ? (entity.type === 'merchant' ? 'Mercantile AI' : 'Pirata NPC') : displayTag + entity.name;
+            ctx.fillStyle = '#2ecc71'; ctx.fillRect(rx - 20, ry - entity.radius - 20, hpRatio * 40, 6);
+
+            // Nome e classe
+            ctx.fillStyle   = '#fff';
+            ctx.font        = 'bold 12px Arial';
+            ctx.textAlign   = 'center';
+            const displayTag  = entity.crew ? `[${entity.crew}] ` : '';
+            const displayName = isNpc
+                ? (entity.type === 'merchant' ? 'Mercantile AI' : 'Pirata NPC')
+                : displayTag + entity.name;
             ctx.fillText(displayName, rx, ry - entity.radius - 25);
             if (entity.shipClass) {
-                ctx.fillStyle = '#f1c40f'; ctx.font = '10px Arial';
+                ctx.fillStyle = '#f1c40f';
+                ctx.font      = '10px Arial';
                 ctx.fillText(`(${entity.shipClass})`, rx, ry - entity.radius - 38);
             }
         }
@@ -513,14 +570,14 @@
                 for (const id in state.players) {
                     const ent = state.players[id];
                     if (ent.renderX === undefined) { ent.renderX = ent.x; ent.renderY = ent.y; }
-                    ent.renderX += (ent.x - ent.renderX) * 0.15;
-                    ent.renderY += (ent.y - ent.renderY) * 0.15;
+                    ent.renderX += (ent.x - ent.renderX) * 0.18;
+                    ent.renderY += (ent.y - ent.renderY) * 0.18;
                 }
                 for (const id in state.npcs) {
                     const ent = state.npcs[id];
                     if (ent.renderX === undefined) { ent.renderX = ent.x; ent.renderY = ent.y; }
-                    ent.renderX += (ent.x - ent.renderX) * 0.15;
-                    ent.renderY += (ent.y - ent.renderY) * 0.15;
+                    ent.renderX += (ent.x - ent.renderX) * 0.18;
+                    ent.renderY += (ent.y - ent.renderY) * 0.18;
                 }
 
                 ctx.save();
@@ -535,28 +592,12 @@
                 
                 // MOD 7: usa renderX/renderY per la camera (movimento fluido)
                 ctx.translate(canvas.width / 2 - myShip.renderX + dxShake, canvas.height / 2 - myShip.renderY + dyShake);
-                // Acqua ancorata alla mappa
-if (waterTexture.complete && waterTexture.naturalWidth > 0) {
-    const pattern = ctx.createPattern(waterTexture, 'repeat');
-
-    if (pattern) {
-        ctx.fillStyle = pattern;
-        ctx.fillRect(
-            -500,
-            -500,
-            MAP_SIZE + 1000,
-            MAP_SIZE + 1000
-        );
-    }
-} else {
-    ctx.fillStyle = '#005a82';
-    ctx.fillRect(
-        -500,
-        -500,
-        MAP_SIZE + 1000,
-        MAP_SIZE + 1000
-    );
-}
+                // Acqua — pattern creato una sola volta e riutilizzato (no GC ogni frame)
+                if (!_waterPattern && waterTexture.complete && waterTexture.naturalWidth > 0) {
+                    _waterPattern = ctx.createPattern(waterTexture, 'repeat');
+                }
+                ctx.fillStyle = _waterPattern || '#005a82';
+                ctx.fillRect(-500, -500, MAP_SIZE + 1000, MAP_SIZE + 1000);
                 // ── MOD 8: Isole da offscreen canvas (zero poligoni per frame) ──
                 if (islandOffscreen) {
                     ctx.drawImage(islandOffscreen, 0, 0);
@@ -580,19 +621,13 @@ if (waterTexture.complete && waterTexture.naturalWidth > 0) {
                     }
                 }
 
-                let fov = myShip.shipClass === 'caravel' ? 1400 : 1100;
+                const fov = myShip.shipClass === 'caravel' ? 1400 : 1100;
 
-                // ── MOD 6: Visibility Culling lato client ──────────────────
-                // Non disegnare nulla fuori dallo schermo + un margine di 500px.
-                // Usa renderX/renderY (interpolati) per il test di visibilità.
-                const DRAW_MARGIN = 500;
-                const halfW = canvas.width  / 2 + DRAW_MARGIN;
-                const halfH = canvas.height / 2 + DRAW_MARGIN;
-                // In coordinate mondo la "finestra" centrata su myShip.renderX/Y
-                function isVisible(wx, wy) {
-                    return Math.abs(wx - myShip.renderX) <= halfW &&
-                           Math.abs(wy - myShip.renderY) <= halfH;
-                }
+                // Aggiorna parametri isVisible() — funzione definita fuori da draw()
+                _visHalfW = canvas.width  / 2 + 500;
+                _visHalfH = canvas.height / 2 + 500;
+                _visCx    = myShip.renderX;
+                _visCy    = myShip.renderY;
 
                 if (state.resources) {
                     state.resources.forEach(res => {
@@ -635,40 +670,54 @@ if (waterTexture.complete && waterTexture.naturalWidth > 0) {
                     if (!p.isDead && isVisible(p.renderX, p.renderY)) drawShip(p, false);
                 }
 
-                for (let i = particles.length - 1; i >= 0; i--) {
-                    let pt = particles[i];
+                // Particelle — swap+pop O(1) invece di splice O(n)
+                let pi = 0;
+                while (pi < particles.length) {
+                    const pt = particles[pi];
                     pt.x += pt.vx; pt.y += pt.vy; pt.life--;
-                    ctx.fillStyle = pt.color; ctx.globalAlpha = Math.max(0, pt.life/40);
-                    ctx.beginPath(); ctx.arc(pt.x, pt.y, Math.max(1, pt.life/8), 0, Math.PI*2); ctx.fill();
-                    ctx.globalAlpha = 1.0;
-                    if(pt.life <= 0) particles.splice(i, 1);
+                    if (pt.life <= 0) {
+                        particles[pi] = particles[particles.length - 1];
+                        particles.pop();
+                    } else {
+                        ctx.fillStyle   = pt.color;
+                        ctx.globalAlpha = pt.life / 40;
+                        const pr = pt.life / 8;
+                        ctx.beginPath(); ctx.arc(pt.x, pt.y, pr < 1 ? 1 : pr, 0, Math.PI * 2); ctx.fill();
+                        pi++;
+                    }
                 }
+                ctx.globalAlpha = 1.0;
 
-                ctx.fillStyle = '#222';
-                for (let b of state.bullets) {
-                    // MOD 6: skip proiettili fuori schermo
+                // Bullets come fillRect (no beginPath/arc → molto più veloce)
+                ctx.fillStyle = '#1a1a1a';
+                const bArr = state.bullets;
+                for (let bi = 0; bi < bArr.length; bi++) {
+                    const b = bArr[bi];
                     if (!isVisible(b.x, b.y)) continue;
-                    ctx.beginPath(); ctx.arc(b.x, b.y, 5, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillRect(b.x - 4, b.y - 4, 8, 8);
                 }
                 ctx.restore();
                 
-                const fogGrad = ctx.createRadialGradient(canvas.width/2, canvas.height/2, fov/2.5, canvas.width/2, canvas.height/2, fov);
-                if (state.isNight) {
-                    fogGrad.addColorStop(0, 'rgba(0, 12, 30, 0.35)'); fogGrad.addColorStop(1, 'rgba(0, 4, 12, 0.98)');
-                } else {
-                    fogGrad.addColorStop(0, 'rgba(0,0,0,0)'); fogGrad.addColorStop(1, 'rgba(0, 45, 65, 0.88)');
-                }
-                ctx.fillStyle = fogGrad;
+                // Fog gradient cached — non ricreato ogni frame
+                ctx.fillStyle = getFogGrad(fov);
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-                drawMinimap();
+                // Minimap throttled a ~5Hz (ogni 12 frame)
+                _minimapFrame++;
+                if (_minimapFrame % 12 === 0) drawMinimap();
             }
             requestAnimationFrame(draw);
         }
         
         shipSprite.onload = () => { draw(); };
         setTimeout(() => { requestAnimationFrame(draw); }, 1000);
-        window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
+        window.addEventListener('resize', () => {
+            canvas.width  = window.innerWidth;
+            canvas.height = window.innerHeight;
+            // Invalida gradient e waterPattern cached al resize
+            _fogCache.day = null; _fogCache.night = null;
+            _waterPattern  = null;
+        });
     </script>
 </body>
 </html>
