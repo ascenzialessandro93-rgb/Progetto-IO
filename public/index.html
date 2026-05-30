@@ -385,18 +385,7 @@
         function draw() {
             // Sostituzione clear con texture acqua
             const myShip = state.players[socket.id];
-            if (myShip) {
-                if (waterTexture.complete && waterTexture.naturalWidth > 0) {
-                    const pattern = ctx.createPattern(waterTexture, 'repeat');
-                    if (pattern) {
-                        ctx.fillStyle = pattern;
-                        ctx.fillRect(0, 0, canvas.width, canvas.height);
-                    }
-                } else {
-                    ctx.fillStyle = '#005a82';
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
-                }
-            }
+            
 
             if (myShip) {
                 ctx.save();
@@ -410,7 +399,28 @@
                 }
                 
                 ctx.translate(canvas.width / 2 - myShip.x + dxShake, canvas.height / 2 - myShip.y + dyShake);
+                // Acqua ancorata alla mappa
+if (waterTexture.complete && waterTexture.naturalWidth > 0) {
+    const pattern = ctx.createPattern(waterTexture, 'repeat');
 
+    if (pattern) {
+        ctx.fillStyle = pattern;
+        ctx.fillRect(
+            -500,
+            -500,
+            MAP_SIZE + 1000,
+            MAP_SIZE + 1000
+        );
+    }
+} else {
+    ctx.fillStyle = '#005a82';
+    ctx.fillRect(
+        -500,
+        -500,
+        MAP_SIZE + 1000,
+        MAP_SIZE + 1000
+    );
+}
                 // Isole con Texture
                 if (islandTexture.complete) {
                     ctx.fillStyle = ctx.createPattern(islandTexture, 'repeat');
