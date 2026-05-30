@@ -388,18 +388,32 @@
             if (myShip) {
                 const offsetX = canvas.width / 2 - myShip.x;
                 const offsetY = canvas.height / 2 - myShip.y;
-                if (
-    waterTexture.complete &&
-    waterTexture.naturalWidth > 0
-) {
+                ctx.save();
+
+ctx.translate(
+    canvas.width / 2 - myShip.x + dxShake,
+    canvas.height / 2 - myShip.y + dyShake
+);
+
+if (waterTexture.complete && waterTexture.naturalWidth > 0) {
     const pattern = ctx.createPattern(waterTexture, 'repeat');
-    if (pattern) {
-        ctx.fillStyle = pattern;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
+
+    ctx.fillStyle = pattern;
+
+    ctx.fillRect(
+        0,
+        0,
+        MAP_SIZE,
+        MAP_SIZE
+    );
 } else {
     ctx.fillStyle = '#005a82';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(
+        0,
+        0,
+        MAP_SIZE,
+        MAP_SIZE
+    );
 }
             }
 
