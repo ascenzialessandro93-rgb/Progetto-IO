@@ -740,13 +740,17 @@ io.on('connection', (socket) => {
             const byR = p.y + perpSinR * offset;
 
             if (p.shipClass === 'clipper') {
-                // Clipper: spara in avanti con leggero spread da entrambi i lati
-                const spread = Math.PI / 16 * (Math.random() - 0.5);
-                const ang = p.angle + spread;
+                // Clipper: spara in avanti deterministico senza spread random
+                const ang = p.angle;
+                bulletPool.spawn(bxL, byL, Math.cos(ang) * 14, Math.sin(ang) * 14, 40, socket.id, p.crew, p.damage);
+                bulletPool.spawn(bxR, byR, Math.cos(ang) * 14, Math.sin(ang) * 14, 40, socket.id, p.crew, p.damage);
+            } else if (p.shipClass === 'caravel') {
+                // Caravel: spara in avanti come il clipper
+                const ang = p.angle;
                 bulletPool.spawn(bxL, byL, Math.cos(ang) * 14, Math.sin(ang) * 14, 40, socket.id, p.crew, p.damage);
                 bulletPool.spawn(bxR, byR, Math.cos(ang) * 14, Math.sin(ang) * 14, 40, socket.id, p.crew, p.damage);
             } else {
-                // Altre navi: spara lateralmente da posizioni simmetriche
+                // Galleon e altre: spara lateralmente da posizioni simmetriche
                 const angL = perpAngleL;  // Porto (sinistra)
                 const angR = perpAngleR;  // Tribordo (destra)
                 bulletPool.spawn(bxL, byL, Math.cos(angL) * 14, Math.sin(angL) * 14, 40, socket.id, p.crew, p.damage);

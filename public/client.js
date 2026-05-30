@@ -126,7 +126,7 @@
         // ── Sistema di input basato su stati per fix Spacebar Freeze ──
         const keys = {};  // Traccia lo stato di tutti i tasti
         let lastShootTime = 0;
-        const fireCooldown = 500;  // 500ms tra spari
+        const fireCooldown = 2000;  // 2000ms tra spari (sincronizzato con server)
         
         window.addEventListener('keydown', (e) => { 
             if (e.key === 'Enter') {
@@ -138,6 +138,9 @@
                 }
             }
             if (document.activeElement === chatInput) return;
+
+            // Ignora eventi ripetuti (key repeat) per prevenire freeze
+            if (e.repeat) return;
 
             keys[e.code] = true;
             
@@ -173,7 +176,14 @@
         });
 
         if (isMobile) {
-            document.getElementById('mobBtnShoot').addEventListener('touchstart', () => socket.emit('shootCommand'));
+            document.getElementById('mobBtnShoot').addEventListener('touchstart', () => {
+                const now = Date.now();
+                if (now - lastShootTime >= fireCooldown) {
+                    socket.emit('shootCommand');
+                    screenShake = 2;
+                    lastShootTime = now;
+                }
+            });
             document.getElementById('mobBtnSkill').addEventListener('touchstart', () => socket.emit('useSkill', 'speed'));
             
             const jZone = document.getElementById('joystickZone');
@@ -419,11 +429,29 @@
             ctx.fillStyle = '#111';
             let cannonsPerSide = entity.cannonCount || (entity.type === 'pirate' ? 2 : 1);
             if (entity.shipClass === 'galleon') cannonsPerSide++;
-            for (let i = 0; i < cannonsPerSide; i++) {
-                const off = (i - (cannonsPerSide - 1) * 0.5) * 15;
-                // Porto (sinistra) e Tribordo (destra) - cannoni simmetrici
-                ctx.fillRect(-entity.radius - 4, off - 4, 8, 12);
-                ctx.fillRect( entity.radius - 4, off - 4, 8, 12);
+            
+            if (entity.shipClass === 'clipper' || entity.shipClass === 'caravel') {
+                // Clipper e Caravel: cannoni disegnati in avanti (allineati con la direzione di sparo)
+                for (let i = 0; i < cannonsPerSide; i++) {
+                    const off = (i - (cannonsPerSide - 1) * 0.5) * 15;
+                    // Cannoni sul lato sinistro e destro, ma orientati in avanti (larghezza 12, altezza 8)
+                    ctx.save();
+                    ctx.translate(-entity.radius, off);
+                    ctx.fillRect(-6, -4, 12, 8);
+                    ctx.restore();
+                    ctx.save();
+                    ctx.translate(entity.radius, off);
+                    ctx.fillRect(-6, -4, 12, 8);
+                    ctx.restore();
+                }
+            } else {
+                // Galleon e altre: cannoni disegnati lateralmente (Porto e Tribordo)
+                for (let i = 0; i < cannonsPerSide; i++) {
+                    const off = (i - (cannonsPerSide - 1) * 0.5) * 15;
+                    // Porto (sinistra) e Tribordo (destra) - cannoni simmetrici (larghezza 8, altezza 12)
+                    ctx.fillRect(-entity.radius - 4, off - 4, 8, 12);
+                    ctx.fillRect( entity.radius - 4, off - 4, 8, 12);
+                }
             }
 
             // Sprite nave
