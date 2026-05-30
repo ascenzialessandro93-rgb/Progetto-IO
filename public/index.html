@@ -108,6 +108,10 @@
         </div>
     </div>
 
+    <div id="cooldown-bar" style="display: none; position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); width: 200px; height: 8px; background: rgba(0,0,0,0.5); border: 2px solid #f39c12; border-radius: 4px;">
+        <div id="cooldown-fill" style="width: 100%; height: 100%; background: #2ecc71; border-radius: 2px; transition: width 0.1s, background 0.1s;"></div>
+    </div>
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";

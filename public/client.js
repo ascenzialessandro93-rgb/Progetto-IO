@@ -104,6 +104,7 @@
             document.getElementById('leaderboardBox').style.display = 'block';
             document.getElementById('compassBox').style.display = 'flex';
             document.getElementById('chatBox').style.display = 'flex';
+            document.getElementById('cooldown-bar').style.display = 'block';
             
             if (isMobile) document.getElementById('mobileControls').style.display = 'block';
 
@@ -123,9 +124,9 @@
         const chatInput = document.getElementById('chatInput');
         
         // ── Sistema di input basato su stati per fix Spacebar Freeze ──
-        let spacePressed = false;
+        const keys = {};  // Traccia lo stato di tutti i tasti
         let lastShootTime = 0;
-        const SHOOT_COOLDOWN = 250;  // ms tra spari lato client
+        const fireCooldown = 500;  // 500ms tra spari
         
         window.addEventListener('keydown', (e) => { 
             if (e.key === 'Enter') {
@@ -138,26 +139,23 @@
             }
             if (document.activeElement === chatInput) return;
 
-            if (e.code === 'Space' && !e.repeat) {
-                spacePressed = true;
-            }
+            keys[e.code] = true;
+            
             if (e.code === 'KeyQ') socket.emit('useSkill', 'speed');
             if (e.code === 'KeyE') socket.emit('useSkill', 'repair');
             if (e.code === 'KeyR') socket.emit('useSkill', 'smoke');
         });
         
         window.addEventListener('keyup', (e) => {
-            if (e.code === 'Space') {
-                spacePressed = false;
-            }
+            keys[e.code] = false;
         });
 
         // ── Loop di firing asincrono nel game loop ──
         function handleShooting() {
-            if (!spacePressed) return;
+            if (!keys['Space']) return;
             
             const now = Date.now();
-            if (now - lastShootTime >= SHOOT_COOLDOWN) {
+            if (now - lastShootTime >= fireCooldown) {
                 socket.emit('shootCommand');
                 screenShake = 2;
                 lastShootTime = now;
@@ -569,6 +567,23 @@
         function draw() {
             // Gestione firing asincrono
             handleShooting();
+            
+            // ── Aggiornamento barra cooldown ──
+            const cooldownBar = document.getElementById('cooldown-fill');
+            if (cooldownBar) {
+                const now = Date.now();
+                const timeSinceShot = now - lastShootTime;
+                const cooldownPercent = Math.min((timeSinceShot / fireCooldown) * 100, 100);
+                
+                cooldownBar.style.width = `${cooldownPercent}%`;
+                
+                // Colore: rosso quando in cooldown, verde quando pronta
+                if (cooldownPercent >= 100) {
+                    cooldownBar.style.background = '#2ecc71';  // Verde - pronto
+                } else {
+                    cooldownBar.style.background = '#e74c3c';  // Rosso - in cooldown
+                }
+            }
             
             // Sostituzione clear con texture acqua
             const myShip = state.players[socket.id];
