@@ -265,6 +265,12 @@
         socket.on('triggerClassSelection', () => { document.getElementById('classSelection').style.display = 'block'; });
 
         const chatInput = document.getElementById('chatInput');
+        
+        // ── Sistema di input asincrono per fix Spacebar Freeze ──
+        let spacePressed = false;
+        let lastShootTime = 0;
+        const SHOOT_COOLDOWN = 250;  // ms tra spari lato client
+        
         window.addEventListener('keydown', (e) => { 
             if (e.key === 'Enter') {
                 if (document.activeElement === chatInput) {
@@ -276,10 +282,24 @@
             }
             if (document.activeElement === chatInput) return;
 
-            if (e.code === 'Space') { socket.emit('shootCommand'); screenShake = 2; }
+            if (e.code === 'Space' && !spacePressed) {
+                spacePressed = true;
+                const now = Date.now();
+                if (now - lastShootTime >= SHOOT_COOLDOWN) {
+                    socket.emit('shootCommand');
+                    screenShake = 2;
+                    lastShootTime = now;
+                }
+            }
             if (e.code === 'KeyQ') socket.emit('useSkill', 'speed');
             if (e.code === 'KeyE') socket.emit('useSkill', 'repair');
             if (e.code === 'KeyR') socket.emit('useSkill', 'smoke');
+        });
+        
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'Space') {
+                spacePressed = false;
+            }
         });
 
         socket.on('chatMessage', (data) => {
@@ -534,12 +554,13 @@
             ctx.lineTo(15,  entity.radius * 2.5);
             ctx.fill();
 
-            // Cannoni — server_pro: cannonCount nel DTO player e NPC
+            // Cannoni — cannonCount rappresenta il numero di cannoni per lato (Livello 1:1, Livello 2:2, Livello 3:3)
             ctx.fillStyle = '#111';
-            let cps = entity.cannonCount ? (entity.cannonCount >> 1) : (entity.type === 'pirate' ? 2 : 1);
-            if (entity.shipClass === 'galleon') cps++;
-            for (let i = 0; i < cps; i++) {
-                const off = (i - (cps - 1) * 0.5) * 15;
+            let cannonsPerSide = entity.cannonCount || (entity.type === 'pirate' ? 2 : 1);
+            if (entity.shipClass === 'galleon') cannonsPerSide++;
+            for (let i = 0; i < cannonsPerSide; i++) {
+                const off = (i - (cannonsPerSide - 1) * 0.5) * 15;
+                // Porto (sinistra) e Tribordo (destra) - cannoni simmetrici
                 ctx.fillRect(-entity.radius - 4, off - 4, 8, 12);
                 ctx.fillRect( entity.radius - 4, off - 4, 8, 12);
             }

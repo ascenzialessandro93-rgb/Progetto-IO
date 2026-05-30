@@ -63,7 +63,7 @@ const MAX_RESOURCES  = 40;
 const UPGRADES = {
     hp_size: { maxLevel: 4, costs: [50,150,300,600],   hp:    [100,150,200,300,500], radius:[25,28,32,38,45] },
     damage:  { maxLevel: 3, costs: [100,250,500],      dmg:   [20,30,45,70]  },
-    cannons: { maxLevel: 3, costs: [100,300,600],      count: [2,4,6,8]      },
+    cannons: { maxLevel: 3, costs: [100,300,600],      count: [1,2,3]      },  // cannoni per lato (Livello 1:1, Livello 2:2, Livello 3:3)
     speed:   { maxLevel: 3, costs: [80,200,400],       spd:   [4.5,5.2,6.0,7.5] },
 };
 
@@ -712,21 +712,28 @@ io.on('connection', (socket) => {
         if (now - p.lastShotTime < 2000) return;
         p.lastShotTime = now;
 
-        let cps = p.cannonCount >> 1;          // cannonCount / 2 con bitshift
-        if (p.shipClass === 'galleon') cps++;
+        // cannonCount ora rappresenta il numero di cannoni per lato (Livello 1:1, Livello 2:2, Livello 3:3)
+        const cannonsPerSide = p.cannonCount;
+        if (p.shipClass === 'galleon') {
+            // Galleon: +1 cannone per lato
+            cannonsPerSide++;
+        }
 
-        for (let i = 0; i < cps; i++) {
-            const offset = (i - (cps - 1) * 0.5) * 15;
+        // Spara simultaneamente da entrambi i lati (Porto e Tribordo)
+        for (let i = 0; i < cannonsPerSide; i++) {
+            const offset = (i - (cannonsPerSide - 1) * 0.5) * 15;
             const bx     = p.x + Math.cos(p.angle) * offset;
             const by     = p.y + Math.sin(p.angle) * offset;
 
             if (p.shipClass === 'clipper') {
+                // Clipper: spara in avanti con leggero spread
                 const spread = Math.PI / 16 * (Math.random() - 0.5);
                 const ang    = p.angle + spread;
                 bulletPool.spawn(bx, by, Math.cos(ang) * 14, Math.sin(ang) * 14, 40, socket.id, p.crew, p.damage);
             } else {
-                const angL = p.angle + Math.PI * 0.5;
-                const angR = p.angle - Math.PI * 0.5;
+                // Altre navi: spara simultaneamente da entrambi i lati (Porto e Tribordo)
+                const angL = p.angle + Math.PI * 0.5;  // Porto (sinistra)
+                const angR = p.angle - Math.PI * 0.5;  // Tribordo (destra)
                 bulletPool.spawn(bx, by, Math.cos(angL) * 14, Math.sin(angL) * 14, 40, socket.id, p.crew, p.damage);
                 bulletPool.spawn(bx, by, Math.cos(angR) * 14, Math.sin(angR) * 14, 40, socket.id, p.crew, p.damage);
             }
