@@ -1,0 +1,22 @@
+name: Sync to Hugging Face Spaces
+
+on:
+  push:
+    branches: [main] # o master, in base a come si chiama il tuo ramo principale
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - name: Push to Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          # Sostituisci "IL_TUO_NOME_UTENTE" e "IL_NOME_DEL_TUO_SPACE" con i tuoi dati reali di Hugging Face
+          git push --force https://PizzaYOLO23:$HF_TOKEN@huggingface.co/spaces/PizzaYOLO23/OnePirate.io main
