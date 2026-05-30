@@ -198,6 +198,46 @@
         const shipSprite = new Image();
         shipSprite.src = 'https://images-wixmp-ed30a86b8c4ca887773594c2.wixmp.com/f/02f7fc23-e1ad-4d3c-bf35-1c3d96f43d92/d68usui-ef6c334e-11b7-4f75-88b9-ecd34c5d4bf0.png?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1cm46YXBwOjdlMGQxODg5ODIyNjQzNzNhNWYwZDQxNWVhMGQyNmUwIiwiaXNzIjoidXJuOmFwcDo3ZTBkMTg4OTgyMjY0MzczYTVmMGQ0MTVlYTBkMjZlMCIsIm9iaiI6W1t7InBhdGgiOiIvZi8wMmY3ZmMyMy1lMWFkLTRkM2MtYmYzNS0xYzNkOTZmNDNkOTIvZDY4dXN1aS1lZjZjMzM0ZS0xMWI3LTRmNzUtODhiOS1lY2QzNGM1ZDRiZjAucG5nIn1dXSwiYXVkIjpbInVybjpzZXJ2aWNlOmZpbGUuZG93bmxvYWQiXX0.3kMXKaqZTAHsDV35EbNLNy4gihS47ZdXmNCv_p0zXAU';
 
+        // ═══════════════════════════════════════════════════════════════
+        //  RENDERING OPTIMIZATIONS — funzioni helper riutilizzabili
+        // ═══════════════════════════════════════════════════════════════
+        
+        // Funzione lerp definita fuori dal loop (evita ricreazione ogni frame)
+        const lerp = (start, end, t) => start + (end - start) * t;
+        
+        // Normalizzazione angolo efficiente (no while loops)
+        const normalizeAngleDiff = (diff) => {
+            diff = ((diff + Math.PI) % (Math.PI * 2)) - Math.PI;
+            return diff;
+        };
+        
+        // Funzione unificata per interpolazione entità
+        const interpolateEntity = (ent, now) => {
+            if (ent.prevX === undefined) {
+                ent.prevX = ent.x;
+                ent.prevY = ent.y;
+                ent.prevAngle = ent.angle;
+                ent.targetX = ent.x;
+                ent.targetY = ent.y;
+                ent.targetAngle = ent.angle;
+                ent.renderX = ent.x;
+                ent.renderY = ent.y;
+                ent.renderAngle = ent.angle;
+                ent.lastUpdateTime = now;
+                return;
+            }
+            
+            const timeSinceUpdate = now - ent.lastUpdateTime;
+            let t = Math.min(timeSinceUpdate / NETWORK_MS, 1);
+            t = t * t * (3 - 2 * t);  // Smoothstep
+            
+            ent.renderX = lerp(ent.prevX, ent.targetX, t);
+            ent.renderY = lerp(ent.prevY, ent.targetY, t);
+            
+            const angleDiff = normalizeAngleDiff(ent.targetAngle - ent.prevAngle);
+            ent.renderAngle = ent.prevAngle + angleDiff * t;
+        };
+
         const UPG_DATA = { hp_size: { max: 4, costs: [50, 150, 300, 600] }, damage: { max: 3, costs: [100, 250, 500] }, cannons: { max: 3, costs: [100, 300, 600] }, speed: { max: 3, costs: [80, 200, 400] } };
 
         document.getElementById('startButton').addEventListener('click', () => {
@@ -649,85 +689,17 @@
 
             if (myShip) {
                 // ── MOD 7: Interpolazione lineare basata sul tempo (Lerp) ─
-                // Calcola il fattore di interpolazione basato sul tempo trascorso
-                // dall'ultimo aggiornamento di rete per movimenti fluidi a 60fps.
+                // Usa funzioni helper riutilizzabili per ridurre overhead
                 const now = Date.now();
 
-                // Funzione helper per Linear Interpolation
-                const lerp = (start, end, t) => start + (end - start) * t;
-
-                // Interpolazione Players
+                // Interpolazione Players (funzione unificata)
                 for (const id in state.players) {
-                    const ent = state.players[id];
-                    
-                    // Se non abbiamo i dati di interpolazione, inizializza
-                    if (ent.prevX === undefined) {
-                        ent.prevX = ent.x;
-                        ent.prevY = ent.y;
-                        ent.prevAngle = ent.angle;
-                        ent.targetX = ent.x;
-                        ent.targetY = ent.y;
-                        ent.targetAngle = ent.angle;
-                        ent.renderX = ent.x;
-                        ent.renderY = ent.y;
-                        ent.renderAngle = ent.angle;
-                        ent.lastUpdateTime = now;
-                        continue;
-                    }
-
-                    // Calcola il tempo trascorso dall'ultimo aggiornamento
-                    const timeSinceUpdate = now - ent.lastUpdateTime;
-                    
-                    // Calcola il fattore di interpolazione (0 a 1)
-                    // Usiamo NETWORK_MS come base per normalizzare il tempo
-                    // Clamp tra 0 e 1 per evitare overshooting
-                    let t = Math.min(timeSinceUpdate / NETWORK_MS, 1);
-                    
-                    // Per movimenti più fluidi, usiamo una curva di easing (smoothstep)
-                    t = t * t * (3 - 2 * t);  // Smoothstep per movimenti più morbidi
-
-                    // Interpola tra prev e target
-                    ent.renderX = lerp(ent.prevX, ent.targetX, t);
-                    ent.renderY = lerp(ent.prevY, ent.targetY, t);
-                    
-                    // Interpolazione angolo con wrapping (gestisce il caso -PI a +PI)
-                    let angleDiff = ent.targetAngle - ent.prevAngle;
-                    // Normalizza la differenza angolare nel range [-PI, PI]
-                    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-                    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-                    ent.renderAngle = ent.prevAngle + angleDiff * t;
+                    interpolateEntity(state.players[id], now);
                 }
 
-                // Interpolazione NPCs
+                // Interpolazione NPCs (funzione unificata)
                 for (const id in state.npcs) {
-                    const ent = state.npcs[id];
-                    
-                    if (ent.prevX === undefined) {
-                        ent.prevX = ent.x;
-                        ent.prevY = ent.y;
-                        ent.prevAngle = ent.angle;
-                        ent.targetX = ent.x;
-                        ent.targetY = ent.y;
-                        ent.targetAngle = ent.angle;
-                        ent.renderX = ent.x;
-                        ent.renderY = ent.y;
-                        ent.renderAngle = ent.angle;
-                        ent.lastUpdateTime = now;
-                        continue;
-                    }
-
-                    const timeSinceUpdate = now - ent.lastUpdateTime;
-                    let t = Math.min(timeSinceUpdate / NETWORK_MS, 1);
-                    t = t * t * (3 - 2 * t);  // Smoothstep
-                    
-                    ent.renderX = lerp(ent.prevX, ent.targetX, t);
-                    ent.renderY = lerp(ent.prevY, ent.targetY, t);
-                    
-                    // Interpolazione angolo con wrapping
-                    let angleDiff = ent.targetAngle - ent.prevAngle;
-                    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-                    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-                    ent.renderAngle = ent.prevAngle + angleDiff * t;
+                    interpolateEntity(state.npcs[id], now);
                 }
 
                 // Interpolazione Kraken
@@ -763,12 +735,9 @@
                 if (islandOffscreen) {
                     ctx.drawImage(islandOffscreen, 0, 0);
                 } else {
-                    // Fallback: disegno diretto finché la cache non è pronta
-                    if (islandTexture.complete) {
-                        ctx.fillStyle = ctx.createPattern(islandTexture, 'repeat');
-                    } else {
-                        ctx.fillStyle = '#e3bc8d';
-                    }
+                    // Fallback: usa colore solido invece di createPattern ogni frame
+                    // createPattern è molto costoso e non dovrebbe essere chiamato nel loop
+                    ctx.fillStyle = '#e3bc8d';
                     ctx.strokeStyle = '#27ae60'; ctx.lineWidth = 12;
                     for (let is of localIslands) {
                         ctx.beginPath();
@@ -790,16 +759,18 @@
                 _visCx    = myShip.renderX;
                 _visCy    = myShip.renderY;
 
+                // ── Risorse: batch rendering per colore (riduce cambiamenti fillStyle) ──
                 if (state.resources) {
-                    state.resources.forEach(res => {
-                        // MOD 6: skip se fuori schermo
-                        if (!isVisible(res.x, res.y)) return;
-                        // (il server manda già solo risorse entro VIEW_DISTANCE)
-                        ctx.fillStyle = '#a0522d';
+                    ctx.fillStyle = '#a0522d';  // Colore esterno
+                    for (const res of state.resources) {
+                        if (!isVisible(res.x, res.y)) continue;
                         ctx.beginPath(); ctx.arc(res.x, res.y, res.radius, 0, Math.PI * 2); ctx.fill();
-                        ctx.fillStyle = '#f1c40f';
+                    }
+                    ctx.fillStyle = '#f1c40f';  // Colore interno
+                    for (const res of state.resources) {
+                        if (!isVisible(res.x, res.y)) continue;
                         ctx.beginPath(); ctx.arc(res.x, res.y, res.radius * 0.4, 0, Math.PI * 2); ctx.fill();
-                    });
+                    }
                 }
 
                 // Kraken Rendering
@@ -822,7 +793,11 @@
                 if (state.specialTreasure && isVisible(state.specialTreasure.x, state.specialTreasure.y)) {  // MOD 6
                     const res = state.specialTreasure;
                     ctx.fillStyle = '#d35400'; ctx.fillRect(res.x - res.radius, res.y - res.radius, res.radius*2, res.radius*2);
-                    ctx.fillStyle = '#f1c40f'; ctx.font = 'bold 14px Arial'; ctx.textAlign = 'center'; ctx.fillText("TESORO", res.x, res.y - res.radius - 8);
+                    ctx.fillStyle = '#f1c40f';
+                    // Cache font e textAlign (impostati solo una volta)
+                    if (ctx.font !== 'bold 14px Arial') ctx.font = 'bold 14px Arial';
+                    if (ctx.textAlign !== 'center') ctx.textAlign = 'center';
+                    ctx.fillText("TESORO", res.x, res.y - res.radius - 8);
                 }
 
                 // MOD 6+7: Disegna solo le navi visibili, usando renderX/renderY
@@ -835,7 +810,9 @@
                     if (!p.isDead && isVisible(p.renderX, p.renderY)) drawShip(p, false);
                 }
 
-                // Particelle — swap+pop O(1) invece di splice O(n)
+                // Particelle — batch rendering per alpha (riduce cambiamenti globalAlpha)
+                // Prima raggruppa per alpha, poi disegna
+                const particleBatches = {};  // { alpha: [particles] }
                 let pi = 0;
                 while (pi < particles.length) {
                     const pt = particles[pi];
@@ -844,11 +821,29 @@
                         particles[pi] = particles[particles.length - 1];
                         particles.pop();
                     } else {
-                        ctx.fillStyle   = pt.color;
-                        ctx.globalAlpha = pt.life / 40;
-                        const pr = pt.life / 8;
-                        ctx.beginPath(); ctx.arc(pt.x, pt.y, pr < 1 ? 1 : pr, 0, Math.PI * 2); ctx.fill();
+                        const alpha = pt.life / 40;
+                        if (!particleBatches[alpha]) particleBatches[alpha] = [];
+                        particleBatches[alpha].push(pt);
                         pi++;
+                    }
+                }
+                
+                // Disegna particelle raggruppate per alpha
+                for (const alpha in particleBatches) {
+                    const batch = particleBatches[alpha];
+                    ctx.globalAlpha = alpha;
+                    // Raggruppa anche per colore dentro lo stesso alpha
+                    const colorBatches = {};
+                    for (const pt of batch) {
+                        if (!colorBatches[pt.color]) colorBatches[pt.color] = [];
+                        colorBatches[pt.color].push(pt);
+                    }
+                    for (const color in colorBatches) {
+                        ctx.fillStyle = color;
+                        for (const pt of colorBatches[color]) {
+                            const pr = pt.life / 8;
+                            ctx.beginPath(); ctx.arc(pt.x, pt.y, pr < 1 ? 1 : pr, 0, Math.PI * 2); ctx.fill();
+                        }
                     }
                 }
                 ctx.globalAlpha = 1.0;
