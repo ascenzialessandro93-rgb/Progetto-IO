@@ -266,7 +266,7 @@
 
         const chatInput = document.getElementById('chatInput');
         
-        // ── Sistema di input asincrono per fix Spacebar Freeze ──
+        // ── Sistema di input basato su stati per fix Spacebar Freeze ──
         let spacePressed = false;
         let lastShootTime = 0;
         const SHOOT_COOLDOWN = 250;  // ms tra spari lato client
@@ -282,14 +282,8 @@
             }
             if (document.activeElement === chatInput) return;
 
-            if (e.code === 'Space' && !spacePressed) {
+            if (e.code === 'Space' && !e.repeat) {
                 spacePressed = true;
-                const now = Date.now();
-                if (now - lastShootTime >= SHOOT_COOLDOWN) {
-                    socket.emit('shootCommand');
-                    screenShake = 2;
-                    lastShootTime = now;
-                }
             }
             if (e.code === 'KeyQ') socket.emit('useSkill', 'speed');
             if (e.code === 'KeyE') socket.emit('useSkill', 'repair');
@@ -301,6 +295,18 @@
                 spacePressed = false;
             }
         });
+
+        // ── Loop di firing asincrono nel game loop ──
+        function handleShooting() {
+            if (!spacePressed) return;
+            
+            const now = Date.now();
+            if (now - lastShootTime >= SHOOT_COOLDOWN) {
+                socket.emit('shootCommand');
+                screenShake = 2;
+                lastShootTime = now;
+            }
+        }
 
         socket.on('chatMessage', (data) => {
             const container = document.getElementById('chatMessages');
@@ -704,6 +710,9 @@
         }
 
         function draw() {
+            // Gestione firing asincrono
+            handleShooting();
+            
             // Sostituzione clear con texture acqua
             const myShip = state.players[socket.id];
             

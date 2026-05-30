@@ -719,23 +719,38 @@ io.on('connection', (socket) => {
             cannonsPerSide++;
         }
 
+        // Vettori perpendicolari per posizionare cannoni sui lati (Porto e Tribordo)
+        const perpAngleL = p.angle + Math.PI * 0.5;  // Porto (sinistra)
+        const perpAngleR = p.angle - Math.PI * 0.5;  // Tribordo (destra)
+        const perpCosL = Math.cos(perpAngleL);
+        const perpSinL = Math.sin(perpAngleL);
+        const perpCosR = Math.cos(perpAngleR);
+        const perpSinR = Math.sin(perpAngleR);
+
         // Spara simultaneamente da entrambi i lati (Porto e Tribordo)
         for (let i = 0; i < cannonsPerSide; i++) {
             const offset = (i - (cannonsPerSide - 1) * 0.5) * 15;
-            const bx     = p.x + Math.cos(p.angle) * offset;
-            const by     = p.y + Math.sin(p.angle) * offset;
+            
+            // Posizione cannoni Porto (sinistra)
+            const bxL = p.x + perpCosL * offset;
+            const byL = p.y + perpSinL * offset;
+            
+            // Posizione cannoni Tribordo (destra)
+            const bxR = p.x + perpCosR * offset;
+            const byR = p.y + perpSinR * offset;
 
             if (p.shipClass === 'clipper') {
-                // Clipper: spara in avanti con leggero spread
+                // Clipper: spara in avanti con leggero spread da entrambi i lati
                 const spread = Math.PI / 16 * (Math.random() - 0.5);
-                const ang    = p.angle + spread;
-                bulletPool.spawn(bx, by, Math.cos(ang) * 14, Math.sin(ang) * 14, 40, socket.id, p.crew, p.damage);
+                const ang = p.angle + spread;
+                bulletPool.spawn(bxL, byL, Math.cos(ang) * 14, Math.sin(ang) * 14, 40, socket.id, p.crew, p.damage);
+                bulletPool.spawn(bxR, byR, Math.cos(ang) * 14, Math.sin(ang) * 14, 40, socket.id, p.crew, p.damage);
             } else {
-                // Altre navi: spara simultaneamente da entrambi i lati (Porto e Tribordo)
-                const angL = p.angle + Math.PI * 0.5;  // Porto (sinistra)
-                const angR = p.angle - Math.PI * 0.5;  // Tribordo (destra)
-                bulletPool.spawn(bx, by, Math.cos(angL) * 14, Math.sin(angL) * 14, 40, socket.id, p.crew, p.damage);
-                bulletPool.spawn(bx, by, Math.cos(angR) * 14, Math.sin(angR) * 14, 40, socket.id, p.crew, p.damage);
+                // Altre navi: spara lateralmente da posizioni simmetriche
+                const angL = perpAngleL;  // Porto (sinistra)
+                const angR = perpAngleR;  // Tribordo (destra)
+                bulletPool.spawn(bxL, byL, Math.cos(angL) * 14, Math.sin(angL) * 14, 40, socket.id, p.crew, p.damage);
+                bulletPool.spawn(bxR, byR, Math.cos(angR) * 14, Math.sin(angR) * 14, 40, socket.id, p.crew, p.damage);
             }
         }
     });
