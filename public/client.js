@@ -143,6 +143,7 @@
             // Ignora eventi ripetuti (key repeat) per prevenire freeze
             if (e.repeat) return;
 
+            // Per spacebar, usa keydown solo per impostare stato, non per logica
             keys[e.code] = true;
             
             if (e.code === 'KeyQ') socket.emit('useSkill', 'speed');
