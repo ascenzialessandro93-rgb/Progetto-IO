@@ -57,7 +57,7 @@ const PHYSICS_MS     = 1000 / PHYSICS_HZ;   // ~33.3 ms
 const NETWORK_MS     = 1000 / NETWORK_HZ;   //  66.7 ms
 
 const MAX_NPCS       = 25;
-const MAX_BULLETS    = 512;   // hard cap → pool size fissa
+const MAX_BULLETS    = 1024;  // Aumentato per evitare esaurimento del pool in combattimenti intensi
 const MAX_RESOURCES  = 40;
 
 const UPGRADES = {
@@ -724,22 +724,23 @@ io.on('connection', (socket) => {
         // Vettori perpendicolari per posizionare cannoni sui lati (Porto e Tribordo)
         const perpAngleL = p.angle + Math.PI * 0.5;  // Porto (sinistra)
         const perpAngleR = p.angle - Math.PI * 0.5;  // Tribordo (destra)
-        const perpCosL = Math.cos(perpAngleL);
-        const perpSinL = Math.sin(perpAngleL);
-        const perpCosR = Math.cos(perpAngleR);
-        const perpSinR = Math.sin(perpAngleR);
+        const cosL = Math.cos(perpAngleL);
+        const sinL = Math.sin(perpAngleL);
+        const cosR = Math.cos(perpAngleR);
+        const sinR = Math.sin(perpAngleR);
+        const fwdCos = Math.cos(p.angle);
+        const fwdSin = Math.sin(p.angle);
 
         // Spara simultaneamente da entrambi i lati (Porto e Tribordo)
         for (let i = 0; i < cannonsPerSide; i++) {
-            const offset = (i - (cannonsPerSide - 1) * 0.5) * 15;
+            // Distribuisce i cannoni lungo la lunghezza della nave (asse forward)
+            const hullOffset = (i - (cannonsPerSide - 1) * 0.5) * 15;
             
-            // Posizione cannoni Porto (sinistra)
-            const bxL = p.x + perpCosL * offset;
-            const byL = p.y + perpSinL * offset;
-            
-            // Posizione cannoni Tribordo (destra)
-            const bxR = p.x + perpCosR * offset;
-            const byR = p.y + perpSinR * offset;
+            // Posizione cannoni: centro nave + spostamento laterale (radius) + distribuzione lungo scafo (hullOffset)
+            const bxL = p.x + (cosL * p.radius) + (fwdCos * hullOffset);
+            const byL = p.y + (sinL * p.radius) + (fwdSin * hullOffset);
+            const bxR = p.x + (cosR * p.radius) + (fwdCos * hullOffset);
+            const byR = p.y + (sinR * p.radius) + (fwdSin * hullOffset);
 
             if (p.shipClass === 'clipper') {
                 // Clipper: spara in avanti deterministico senza spread random

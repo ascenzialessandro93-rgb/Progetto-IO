@@ -68,13 +68,12 @@
         };
         
         // Funzione unificata per interpolazione entità
-        const interpolateEntity = (ent, now) => {
+        const interpolateEntity = (ent, timestamp) => {
             if (ent.prevX === undefined) {
                 ent.prevX = ent.x;
                 ent.prevY = ent.y;
                 ent.prevAngle = ent.angle;
-                ent.targetX = ent.x;
-                ent.targetY = ent.y;
+                ent.targetX = ent.x; ent.targetY = ent.y;
                 ent.targetAngle = ent.angle;
                 ent.renderX = ent.x;
                 ent.renderY = ent.y;
@@ -83,7 +82,7 @@
                 return;
             }
             
-            const timeSinceUpdate = now - ent.lastUpdateTime;
+            const timeSinceUpdate = timestamp - ent.lastUpdateTime;
             let t = Math.min(timeSinceUpdate / NETWORK_MS, 1);
             t = t * t * (3 - 2 * t);  // Smoothstep
             
@@ -140,6 +139,9 @@
             }
             if (document.activeElement === chatInput) return;
 
+            // Fix Spacebar Freeze: impedisce lo scroll del browser quando si preme Space
+            if (e.code === 'Space') e.preventDefault();
+
             // Ignora eventi ripetuti (key repeat) per prevenire freeze
             if (e.repeat) return;
 
@@ -159,18 +161,15 @@
         // Il cooldown client-side (fireCooldown) è una stima ottimistica:
         // il server ha la parola finale. Se myData.lastShotTime è più recente
         // (es. il server ha rifiutato un tiro precedente), aggiorniamo in sincronia.
-        function handleShooting() {
+        function handleShooting(now) {
             // Sync con server: se il server ci comunica un lastShotTime più recente,
             // lo usiamo per evitare di mostrare la barra "pronta" mentre il server
             // è ancora in cooldown.
             const serverLst = state.myData && state.myData.lastShotTime;
-            if (serverLst && serverLst > lastShootTime) {
-                lastShootTime = serverLst;
-            }
+            if (serverLst && serverLst > lastShootTime) lastShootTime = serverLst;
 
             if (!keys['Space']) return;
 
-            const now = Date.now();
             if (now - lastShootTime >= fireCooldown) {
                 socket.emit('shootCommand');
                 screenShake = 2;
@@ -239,7 +238,8 @@
                 if (data.targetId === socket.id) screenShake = 6;
             } else if (data.type === 'explosion') {
                 for(let i=0; i<30; i++) particles.push({ x: data.x, y: data.y, vx: (Math.random()-0.5)*15, vy: (Math.random()-0.5)*15, life: 40, color: '#f39c12' });
-                if (Math.hypot(data.x - state.players[socket.id]?.x, data.y - state.players[socket.id]?.y) < 800) screenShake = 10;
+                const dx = data.x - (state.players[socket.id]?.x || 0); const dy = data.y - (state.players[socket.id]?.y || 0);
+                if (dx*dx + dy*dy < 640000) screenShake = 10; // 800^2
             }
         });
 
@@ -438,7 +438,7 @@
 
             ctx.save();
             ctx.translate(rx, ry);
-            ctx.rotate(rAngle + Math.PI / 2 + Math.PI);
+            ctx.rotate(rAngle + 4.71239); // 1.5 * PI + PI semplificato
 
             // Scia della nave
             ctx.fillStyle = 'rgba(255,255,255,0.15)';
@@ -619,13 +619,12 @@
         }
 
         function draw() {
-            // Gestione firing asincrono
-            handleShooting();
-            
+            const now = Date.now();
+            handleShooting(now);
+
             // ── Aggiornamento barra cooldown (throttled: DOM solo se % cambia) ──
             {
-                const nowMs = Date.now();
-                const timeSinceShot   = nowMs - lastShootTime;
+                const timeSinceShot   = now - lastShootTime;
                 const pct = Math.min((timeSinceShot / fireCooldown) * 100, 100) | 0; // intero 0-100
                 if (pct !== _lastCooldownPct) {
                     _lastCooldownPct = pct;
@@ -642,10 +641,6 @@
             
 
             if (myShip) {
-                // ── MOD 7: Interpolazione lineare basata sul tempo (Lerp) ─
-                // Usa funzioni helper riutilizzabili per ridurre overhead
-                const now = Date.now();
-
                 // Interpolazione Players (funzione unificata)
                 for (const id in state.players) {
                     interpolateEntity(state.players[id], now);
@@ -679,12 +674,12 @@
                 
                 // MOD 7: usa renderX/renderY per la camera (movimento fluido)
                 ctx.translate(canvas.width / 2 - myShip.renderX + dxShake, canvas.height / 2 - myShip.renderY + dyShake);
-                // Acqua — pattern creato una sola volta e riutilizzato (no GC ogni frame)
-                if (!_waterPattern && waterTexture.complete && waterTexture.naturalWidth > 0) {
-                    _waterPattern = ctx.createPattern(waterTexture, 'repeat');
-                }
+                
+                if (!_waterPattern && waterTexture.complete) _waterPattern = ctx.createPattern(waterTexture, 'repeat');
                 ctx.fillStyle = _waterPattern || '#005a82';
-                ctx.fillRect(-500, -500, MAP_SIZE + 1000, MAP_SIZE + 1000);
+                // OTTIMIZZAZIONE: Disegna solo l'area visibile (più 200px di buffer) per risparmiare fill-rate GPU
+                ctx.fillRect(myShip.renderX - canvas.width, myShip.renderY - canvas.height, canvas.width * 2, canvas.height * 2);
+
                 // ── MOD 8: Isole da offscreen canvas (zero poligoni per frame) ──
                 if (islandOffscreen) {
                     ctx.drawImage(islandOffscreen, 0, 0);
@@ -713,18 +708,20 @@
                 _visCx    = myShip.renderX;
                 _visCy    = myShip.renderY;
 
-                // ── Risorse: batch rendering per colore (riduce cambiamenti fillStyle) ──
+                // ── Risorse: OTTIMIZZAZIONE Batch rendering (una sola chiamata fill per tutte le risorse) ──
                 if (state.resources) {
-                    ctx.fillStyle = '#a0522d';  // Colore esterno
+                    ctx.fillStyle = '#a0522d';
+                    ctx.beginPath();
                     for (const res of state.resources) {
-                        if (!isVisible(res.x, res.y)) continue;
-                        ctx.beginPath(); ctx.arc(res.x, res.y, res.radius, 0, Math.PI * 2); ctx.fill();
+                        if (isVisible(res.x, res.y)) { ctx.moveTo(res.x + res.radius, res.y); ctx.arc(res.x, res.y, res.radius, 0, 6.283); }
                     }
-                    ctx.fillStyle = '#f1c40f';  // Colore interno
+                    ctx.fill();
+                    ctx.fillStyle = '#f1c40f';
+                    ctx.beginPath();
                     for (const res of state.resources) {
-                        if (!isVisible(res.x, res.y)) continue;
-                        ctx.beginPath(); ctx.arc(res.x, res.y, res.radius * 0.4, 0, Math.PI * 2); ctx.fill();
+                        if (isVisible(res.x, res.y)) { ctx.moveTo(res.x + res.radius*0.4, res.y); ctx.arc(res.x, res.y, res.radius * 0.4, 0, 6.283); }
                     }
+                    ctx.fill();
                 }
 
                 // Kraken Rendering
@@ -764,52 +761,29 @@
                     if (!p.isDead && isVisible(p.renderX, p.renderY)) drawShip(p, false);
                 }
 
-                // Particelle — batch rendering per alpha (riduce cambiamenti globalAlpha)
-                // Prima raggruppa per alpha, poi disegna
-                const particleBatches = {};  // { alpha: [particles] }
+                // Particelle — OTTIMIZZAZIONE: Rimosso raggruppamento dinamico (GC Killer)
                 let pi = 0;
                 while (pi < particles.length) {
                     const pt = particles[pi];
                     pt.x += pt.vx; pt.y += pt.vy; pt.life--;
                     if (pt.life <= 0) {
-                        particles[pi] = particles[particles.length - 1];
-                        particles.pop();
+                        particles[pi] = particles[particles.length - 1]; particles.pop();
                     } else {
-                        const alpha = pt.life / 40;
-                        if (!particleBatches[alpha]) particleBatches[alpha] = [];
-                        particleBatches[alpha].push(pt);
+                        ctx.globalAlpha = pt.life / 40;
+                        ctx.fillStyle = pt.color;
+                        const pr = pt.life / 8;
+                        ctx.fillRect(pt.x - pr/2, pt.y - pr/2, pr, pr); // fillRect è molto più veloce di arc() per particelle
                         pi++;
-                    }
-                }
-                
-                // Disegna particelle raggruppate per alpha
-                for (const alpha in particleBatches) {
-                    const batch = particleBatches[alpha];
-                    ctx.globalAlpha = alpha;
-                    // Raggruppa anche per colore dentro lo stesso alpha
-                    const colorBatches = {};
-                    for (const pt of batch) {
-                        if (!colorBatches[pt.color]) colorBatches[pt.color] = [];
-                        colorBatches[pt.color].push(pt);
-                    }
-                    for (const color in colorBatches) {
-                        ctx.fillStyle = color;
-                        for (const pt of colorBatches[color]) {
-                            const pr = pt.life / 8;
-                            ctx.beginPath(); ctx.arc(pt.x, pt.y, pr < 1 ? 1 : pr, 0, Math.PI * 2); ctx.fill();
-                        }
                     }
                 }
                 ctx.globalAlpha = 1.0;
 
-                // Bullets come fillRect (no beginPath/arc → molto più veloce)
+                // Bullets — Batch rendering
                 ctx.fillStyle = '#1a1a1a';
-                const bArr = state.bullets;
-                for (let bi = 0; bi < bArr.length; bi++) {
-                    const b = bArr[bi];
-                    if (!isVisible(b.x, b.y)) continue;
-                    ctx.fillRect(b.x - 4, b.y - 4, 8, 8);
+                for (const b of state.bullets) {
+                    if (isVisible(b.x, b.y)) ctx.fillRect(b.x - 4, b.y - 4, 8, 8);
                 }
+
                 ctx.restore();
                 
                 // Fog gradient cached — non ricreato ogni frame
@@ -823,8 +797,10 @@
             requestAnimationFrame(draw);
         }
         
-        shipSprite.onload = () => { draw(); };
-        setTimeout(() => { requestAnimationFrame(draw); }, 1000);
+        // Fix: Avvia il loop di disegno una sola volta
+        shipSprite.onload = () => { 
+            if (!window._gameLoopStarted) { window._gameLoopStarted = true; requestAnimationFrame(draw); }
+        };
         window.addEventListener('resize', () => {
             canvas.width  = window.innerWidth;
             canvas.height = window.innerHeight;
