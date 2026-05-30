@@ -17,7 +17,8 @@ let resourceIdCounter = 0;
 let globalTicks = 0;
 let isNight = false;
 let specialTreasure = null;
-let kraken = null; // Il Boss PvE
+let kraken = null; 
+let krakenDeathTick = 0; // Nuova variabile per il respawn
 
 const UPGRADES = {
     hp_size: { maxLevel: 4, costs: [50, 150, 300, 600],  hp: [100, 150, 200, 300, 500], radius: [25, 28, 32, 38, 45] },
@@ -33,7 +34,6 @@ function generateIslands() {
         const baseR = Math.random() * 150 + 100;
         const x = Math.random() * (MAP_SIZE - baseR * 3) + baseR * 1.5;
         const y = Math.random() * (MAP_SIZE - baseR * 3) + baseR * 1.5;
-        // Evitiamo isole al centro esatto per fare spazio al Kraken
         if (Math.hypot(x - MAP_SIZE/2, y - MAP_SIZE/2) < 600) continue; 
 
         let overlap = false;
@@ -98,7 +98,6 @@ io.on('connection', (socket) => {
         let username = (data.username || "Capitano").trim();
         let crewTag = (data.crew || "").trim().toUpperCase();
         
-        // Notifica globale nuovo giocatore
         io.emit('chatMessage', { sender: 'SISTEMA', text: `${username} è sceso in mare!`, type: 'system' });
 
         players[socket.id] = {
@@ -125,8 +124,6 @@ io.on('connection', (socket) => {
         if (p && !p.isDead && Date.now() - p.lastShotTime >= 2000) {
             p.lastShotTime = Date.now();
             let cps = p.cannonCount / 2;
-            
-            // Logica specifica per la classe
             if (p.shipClass === 'galleon') cps += 1; 
 
             for(let i=0; i<cps; i++) {
@@ -140,10 +137,8 @@ io.on('connection', (socket) => {
                 };
                 
                 if (p.shipClass === 'clipper') {
-                    // Clipper spara prevalentemente in avanti
                     createBullet(Math.PI/16 * (Math.random()-0.5)); 
                 } else {
-                    // Sparo laterale classico
                     createBullet(Math.PI / 2);  
                     createBullet(-Math.PI / 2); 
                 }
@@ -177,8 +172,6 @@ io.on('connection', (socket) => {
                     if(type === 'damage') p.damage = UPGRADES.damage.dmg[p.upg[type]];
                     if(type === 'cannons') p.cannonCount = UPGRADES.cannons.count[p.upg[type]];
                     if(type === 'speed') p.speed = UPGRADES.speed.spd[p.upg[type]];
-                    
-                    // Trigger Evoluzione Classe al Livello Scafo 2
                     if (type === 'hp_size' && p.upg.hp_size === 2 && !p.shipClass) {
                         socket.emit('triggerClassSelection');
                     }
@@ -193,7 +186,7 @@ io.on('connection', (socket) => {
             p.shipClass = shipClass;
             if (shipClass === 'galleon') { p.maxHp *= 1.5; p.hp = p.maxHp; p.speed *= 0.8; p.radius *= 1.2; }
             if (shipClass === 'clipper') { p.speed *= 1.35; p.maxHp *= 0.8; p.radius *= 0.9; }
-            if (shipClass === 'caravel') { p.speed *= 1.1; p.maxHp *= 1.1; /* Raggio visivo extra gestito sul client */ }
+            if (shipClass === 'caravel') { p.speed *= 1.1; p.maxHp *= 1.1; }
         }
     });
 
@@ -215,18 +208,16 @@ setInterval(() => {
     globalTicks++;
     const now = Date.now();
 
-    // Ciclo Giorno/Notte
     if (globalTicks % 1800 === 0) isNight = !isNight;
 
-    // Boss PvE: Il Kraken
-    if (globalTicks % 4000 === 0 && !kraken) {
+    // Boss PvE: Il Kraken (Respawn dopo 7 minuti = 12600 tick)
+    if (!kraken && (globalTicks - krakenDeathTick) >= 12600) {
         kraken = { id: 'kraken', x: MAP_SIZE/2, y: MAP_SIZE/2, hp: 6000, maxHp: 6000, radius: 100, angle: 0 };
-        io.emit('chatMessage', { sender: 'SISTEMA', text: '🦑 IL KRAKEN È EMERSO AL CENTRO DELLA MAPPA!', type: 'system' });
+        io.emit('chatMessage', { sender: 'SISTEMA', text: '🦑 IL KRAKEN È EMERSO!', type: 'system' });
     }
 
     if (kraken) {
         kraken.angle += 0.015;
-        // Il kraken spara in 8 direzioni a ondate
         if (globalTicks % 60 === 0) {
             for(let i=0; i<8; i++) {
                 bullets.push({
@@ -241,7 +232,6 @@ setInterval(() => {
         specialTreasure = { x: Math.random() * (MAP_SIZE - 2000) + 1000, y: Math.random() * (MAP_SIZE - 2000) + 1000, radius: 45, goldValue: 500 };
     }
 
-    // IA NPCs
     if (Object.keys(npcs).length < 25) {
         let isPirate = Math.random() > 0.6;
         let id = 'npc_' + npcIdCounter++;
@@ -260,7 +250,6 @@ setInterval(() => {
         handleIslandCollisions(n);
     }
 
-    // Giocatori & Risorse
     for (let id in players) {
         const p = players[id];
         if (p.isDead) continue;
@@ -279,15 +268,12 @@ setInterval(() => {
                 p.targetX = null; p.targetY = null;
             }
         }
-
         handleIslandCollisions(p);
 
-        // Raccolta Risorse (RALLENTATA)
         for (let i = resources.length - 1; i >= 0; i--) {
             const res = resources[i];
             const dx = p.x - res.x; const dy = p.y - res.y;
             if (Math.sqrt(dx*dx + dy*dy) < p.radius + res.radius) {
-                // ESTRAZIONE LENTA: 1 unità d'oro ogni 6 tick (circa 5 oro al secondo)
                 if (globalTicks % 6 === 0) {
                     p.gold += 1; 
                     res.amount -= 1;
@@ -324,13 +310,11 @@ setInterval(() => {
         }
     }
 
-    // Proiettili e logica Danni (Invio eventi particellari ai client colpiti)
     for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
         b.x += b.vx; b.y += b.vy; b.life--;
         let hit = false;
 
-        // Hit Players
         for (let pid in players) {
             let p = players[pid];
             if (!p.isDead && pid !== b.playerId && !(b.crew && b.crew === p.crew)) {
@@ -350,7 +334,6 @@ setInterval(() => {
             }
         }
 
-        // Hit NPCs / Kraken
         if (!hit) {
             for (let nid in npcs) {
                 let n = npcs[nid];
@@ -376,7 +359,8 @@ setInterval(() => {
                     if (kraken.hp <= 0) {
                         if (players[b.playerId]) players[b.playerId].gold += 2500;
                         io.emit('effect', { type: 'explosion', x: kraken.x, y: kraken.y });
-                        io.emit('chatMessage', { sender: 'SISTEMA', text: '🦑 IL KRAKEN È STATO SCONFITTO!', type: 'system' });
+                        io.emit('chatMessage', { sender: 'SISTEMA', text: '🦑 IL KRAKEN È STATO SCONFITTO! Tornerà tra 7 minuti.', type: 'system' });
+                        krakenDeathTick = globalTicks; // Memorizza quando è morto
                         kraken = null;
                     }
                 }

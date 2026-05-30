@@ -112,12 +112,10 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
         
-        // Inserisci qui le tue credenziali Firebase (le hai già usate in altri progetti per l'Expense Tracker)
         const firebaseConfig = {
             apiKey: "INSERISCI_API_KEY",
             authDomain: "INSERISCI_DOMAIN",
             projectId: "INSERISCI_PROJECT_ID"
-            // ...
         };
         
         try {
@@ -150,11 +148,16 @@
         const mCanvas = document.getElementById('minimapCanvas');
         const mCtx = mCanvas.getContext('2d');
         
+        // --- Texture Assets ---
+        const waterTexture = new Image(); waterTexture.src = '/water.png';
+        const islandTexture = new Image(); islandTexture.src = '/island.png';
+        const krakenSprite = new Image(); krakenSprite.src = '/kraken.png';
+        // ----------------------
+        
         const MAP_SIZE = 8000;
         let state = { players: {}, npcs: {}, bullets: [], resources: [], isNight: false, specialTreasure: null, kraken: null, leaderboard: [] };
         let localIslands = [];
         
-        // Sistemi visivi client-side
         let particles = [];
         let screenShake = 0;
         let isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
@@ -188,7 +191,6 @@
         
         socket.on('triggerClassSelection', () => { document.getElementById('classSelection').style.display = 'block'; });
 
-        // Gestione Chat
         const chatInput = document.getElementById('chatInput');
         window.addEventListener('keydown', (e) => { 
             if (e.key === 'Enter') {
@@ -199,7 +201,7 @@
                     chatInput.style.display = 'block'; chatInput.focus();
                 }
             }
-            if (document.activeElement === chatInput) return; // Disabilita hotkeys se in chat
+            if (document.activeElement === chatInput) return;
 
             if (e.code === 'Space') { socket.emit('shootCommand'); screenShake = 2; }
             if (e.code === 'KeyQ') socket.emit('useSkill', 'speed');
@@ -217,7 +219,6 @@
             if (container.childElementCount > 10) container.removeChild(container.firstChild);
         });
 
-        // Controlli Mobile
         if (isMobile) {
             document.getElementById('mobBtnShoot').addEventListener('touchstart', () => socket.emit('shootCommand'));
             document.getElementById('mobBtnSkill').addEventListener('touchstart', () => socket.emit('useSkill', 'speed'));
@@ -233,7 +234,7 @@
             function handleJoystick(e) {
                 const rect = jZone.getBoundingClientRect();
                 const touch = e.touches[0];
-                let x = touch.clientX - rect.left - 60; // 60 is radius
+                let x = touch.clientX - rect.left - 60; 
                 let y = touch.clientY - rect.top - 60;
                 const dist = Math.hypot(x, y);
                 if (dist > 40) { x = (x/dist)*40; y = (y/dist)*40; }
@@ -244,7 +245,6 @@
             }
         }
 
-        // Mouse Move
         window.addEventListener('click', (e) => {
             if(e.clientY > window.innerHeight - 120 || isMobile || document.activeElement === chatInput) return; 
             if (!state.players[socket.id] || state.players[socket.id].isDead) return;
@@ -252,7 +252,6 @@
             socket.emit('moveCommand', { x: e.clientX - canvas.width/2 + myShip.x, y: e.clientY - canvas.height/2 + myShip.y });
         });
 
-        // Effetti Visivi
         socket.on('effect', (data) => {
             if (data.type === 'hit') {
                 for(let i=0; i<8; i++) particles.push({ x: data.x, y: data.y, vx: (Math.random()-0.5)*10, vy: (Math.random()-0.5)*10, life: 20, color: data.color || '#e74c3c' });
@@ -315,7 +314,6 @@
             const spriteSize = entity.radius * 3.5; 
             if (entity.id === socket.id && entity.skills?.smokeScreen?.activeUntil > now) ctx.globalAlpha = 0.4;
             
-            // Applica una tinta diversa in base alla classe
             if (entity.shipClass === 'galleon') ctx.filter = 'hue-rotate(90deg)';
             if (entity.shipClass === 'clipper') ctx.filter = 'hue-rotate(200deg)';
             
@@ -385,13 +383,26 @@
         }
 
         function draw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // Sostituzione clear con texture acqua
             const myShip = state.players[socket.id];
+            if (myShip) {
+                const offsetX = canvas.width / 2 - myShip.x;
+                const offsetY = canvas.height / 2 - myShip.y;
+                if (waterTexture.complete) {
+                    ctx.fillStyle = ctx.createPattern(waterTexture, 'repeat');
+                    ctx.save();
+                    ctx.translate(- (myShip.x % 100), - (myShip.y % 100)); // Parallasse opzionale
+                    ctx.fillRect(-canvas.width, -canvas.height, canvas.width * 3, canvas.height * 3);
+                    ctx.restore();
+                } else {
+                    ctx.fillStyle = '#005a82';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                }
+            }
 
             if (myShip) {
                 ctx.save();
                 
-                // Screen Shake Effect
                 let dxShake = 0, dyShake = 0;
                 if (screenShake > 0) {
                     dxShake = (Math.random() - 0.5) * screenShake;
@@ -402,8 +413,13 @@
                 
                 ctx.translate(canvas.width / 2 - myShip.x + dxShake, canvas.height / 2 - myShip.y + dyShake);
 
-                // Isole
-                ctx.fillStyle = '#e3bc8d'; ctx.strokeStyle = '#27ae60'; ctx.lineWidth = 12; 
+                // Isole con Texture
+                if (islandTexture.complete) {
+                    ctx.fillStyle = ctx.createPattern(islandTexture, 'repeat');
+                } else {
+                    ctx.fillStyle = '#e3bc8d';
+                }
+                ctx.strokeStyle = '#27ae60'; ctx.lineWidth = 12; 
                 for (let is of localIslands) {
                     ctx.beginPath();
                     for (let i = 0; i < is.points.length; i++) {
@@ -415,10 +431,8 @@
                     ctx.closePath(); ctx.fill(); ctx.stroke();
                 }
 
-                // Field of View Class
                 let fov = myShip.shipClass === 'caravel' ? 1400 : 1100;
 
-                // Risorse Naturali
                 if (state.resources) {
                     state.resources.forEach(res => {
                         if (Math.hypot(res.x - myShip.x, res.y - myShip.y) > fov) return;
@@ -429,18 +443,16 @@
                     });
                 }
 
-                // Kraken Rendering
+                // Kraken Rendering Aggiornato
                 if (state.kraken && Math.hypot(state.kraken.x - myShip.x, state.kraken.y - myShip.y) <= fov + 200) {
-                    ctx.fillStyle = '#8e44ad';
-                    ctx.beginPath(); ctx.arc(state.kraken.x, state.kraken.y, state.kraken.radius, 0, Math.PI*2); ctx.fill();
-                    // Tentacoli base
-                    for(let i=0; i<8; i++) {
-                        const ta = state.kraken.angle + i*Math.PI/4;
-                        ctx.beginPath(); ctx.moveTo(state.kraken.x, state.kraken.y);
-                        ctx.lineTo(state.kraken.x + Math.cos(ta)*(state.kraken.radius+40), state.kraken.y + Math.sin(ta)*(state.kraken.radius+40));
-                        ctx.lineWidth = 15; ctx.strokeStyle = '#9b59b6'; ctx.stroke();
+                    const size = state.kraken.radius * 2.5;
+                    if (krakenSprite.complete) {
+                        ctx.drawImage(krakenSprite, state.kraken.x - size/2, state.kraken.y - size/2, size, size);
+                    } else {
+                        ctx.fillStyle = '#8e44ad';
+                        ctx.beginPath(); ctx.arc(state.kraken.x, state.kraken.y, state.kraken.radius, 0, Math.PI*2); ctx.fill();
                     }
-                    // HP Kraken
+                    
                     ctx.fillStyle = '#c0392b'; ctx.fillRect(state.kraken.x - 50, state.kraken.y - state.kraken.radius - 20, 100, 8);
                     ctx.fillStyle = '#2ecc71'; ctx.fillRect(state.kraken.x - 50, state.kraken.y - state.kraken.radius - 20, (state.kraken.hp / state.kraken.maxHp) * 100, 8);
                 }
@@ -458,7 +470,6 @@
                     if (!state.players[id].isDead && Math.hypot(state.players[id].x - myShip.x, state.players[id].y - myShip.y) <= fov) drawShip(state.players[id], false); 
                 }
 
-                // Particellari
                 for (let i = particles.length - 1; i >= 0; i--) {
                     let pt = particles[i];
                     pt.x += pt.vx; pt.y += pt.vy; pt.life--;
