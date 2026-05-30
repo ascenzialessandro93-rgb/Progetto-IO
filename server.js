@@ -464,6 +464,8 @@ function npcDTO(n) {
 // ─── Oggetti "myData" riutilizzati ───────────────────────────
 const _myData = {
     gold: 0, upg: null,
+    cannonCount: 1,       // cannoni per lato (per sync cooldown label)
+    lastShotTime: 0,      // timestamp ultimo sparo
     skills: {
         speedBoost:  { activeUntil: 0, cd: 0 },
         repair:      { cd: 0 },
@@ -534,7 +536,8 @@ function buildStateForPlayer(p, leaderboard) {
             _nearPlayers.push({
                 id: e.id, x: e.x, y: e.y, angle: e.angle,
                 hp: e.hp, maxHp: e.maxHp, radius: e.radius,
-                name: e.name, crew: e.crew, shipClass: e.shipClass, isDead: e.isDead,
+                name: e.name, crew: e.crew, shipClass: e.shipClass,
+                isDead: e.isDead, cannonCount: e.cannonCount,  // necessario per drawShip
             });
         }
     }
@@ -597,6 +600,8 @@ function buildStateForPlayer(p, leaderboard) {
     // ── myData (dati privati del destinatario) ────────────
     _myData.gold                          = p.gold;
     _myData.upg                           = p.upg;
+    _myData.cannonCount                   = p.cannonCount;  // per cooldown label e UI
+    _myData.lastShotTime                  = p.lastShotTime; // timestamp ultimo sparo (per sync cooldown)
     _myData.skills.speedBoost.activeUntil = p.skills.speedBoost.activeUntil;
     _myData.skills.speedBoost.cd          = p.skills.speedBoost.cd;
     _myData.skills.repair.cd              = p.skills.repair.cd;
@@ -712,12 +717,9 @@ io.on('connection', (socket) => {
         if (now - p.lastShotTime < 2000) return;
         p.lastShotTime = now;
 
-        // cannonCount ora rappresenta il numero di cannoni per lato (Livello 1:1, Livello 2:2, Livello 3:3)
-        const cannonsPerSide = p.cannonCount;
-        if (p.shipClass === 'galleon') {
-            // Galleon: +1 cannone per lato
-            cannonsPerSide++;
-        }
+        // cannonCount = cannoni per lato (Liv 1:1, Liv 2:2, Liv 3:3). Galleon: +1 per lato.
+        let cannonsPerSide = p.cannonCount;
+        if (p.shipClass === 'galleon') cannonsPerSide++;
 
         // Vettori perpendicolari per posizionare cannoni sui lati (Porto e Tribordo)
         const perpAngleL = p.angle + Math.PI * 0.5;  // Porto (sinistra)

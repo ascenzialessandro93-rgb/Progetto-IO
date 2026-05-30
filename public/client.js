@@ -125,8 +125,9 @@
         
         // ── Sistema di input basato su stati per fix Spacebar Freeze ──
         const keys = {};  // Traccia lo stato di tutti i tasti
-        let lastShootTime = 0;
-        const fireCooldown = 2000;  // 2000ms tra spari (sincronizzato con server)
+        let lastShootTime    = 0;
+        let _lastCooldownPct = -1; // throttle aggiornamento DOM barra cooldown
+        const fireCooldown  = 2000;  // 2000ms tra spari (sincronizzato con server)
         
         window.addEventListener('keydown', (e) => { 
             if (e.key === 'Enter') {
@@ -154,9 +155,20 @@
         });
 
         // ── Loop di firing asincrono nel game loop ──
+        // Il cooldown client-side (fireCooldown) è una stima ottimistica:
+        // il server ha la parola finale. Se myData.lastShotTime è più recente
+        // (es. il server ha rifiutato un tiro precedente), aggiorniamo in sincronia.
         function handleShooting() {
+            // Sync con server: se il server ci comunica un lastShotTime più recente,
+            // lo usiamo per evitare di mostrare la barra "pronta" mentre il server
+            // è ancora in cooldown.
+            const serverLst = state.myData && state.myData.lastShotTime;
+            if (serverLst && serverLst > lastShootTime) {
+                lastShootTime = serverLst;
+            }
+
             if (!keys['Space']) return;
-            
+
             const now = Date.now();
             if (now - lastShootTime >= fireCooldown) {
                 socket.emit('shootCommand');
@@ -177,6 +189,10 @@
 
         if (isMobile) {
             document.getElementById('mobBtnShoot').addEventListener('touchstart', () => {
+                // Sync server lastShotTime prima del check
+                const serverLst = state.myData && state.myData.lastShotTime;
+                if (serverLst && serverLst > lastShootTime) lastShootTime = serverLst;
+
                 const now = Date.now();
                 if (now - lastShootTime >= fireCooldown) {
                     socket.emit('shootCommand');
@@ -244,7 +260,7 @@
         // - lastUpdateTime: timestamp dell'ultimo aggiornamento ricevuto
         // - interpolationFactor: fattore calcolato dinamicamente basato sul tempo
 
-        const NETWORK_HZ = 15;  // Server invia a 15Hz (ridotto per ottimizzazione banda)
+        const NETWORK_HZ = 15;  // Sincronizzato con NETWORK_HZ del server
         const NETWORK_MS = 1000 / NETWORK_HZ;  // 66.7ms tra aggiornamenti
 
         socket.on('updateState', (newState) => {
@@ -359,6 +375,12 @@
             if (my.gold !== undefined)
                 document.getElementById('goldAmount').innerText = my.gold | 0;
 
+            // Sync del cooldown client con lastShotTime del server
+            // (evita barra verde mentre server è ancora in cooldown)
+            if (my.lastShotTime && my.lastShotTime > lastShootTime) {
+                lastShootTime = my.lastShotTime;
+            }
+
             // Pulsanti upgrade
             if (my.upg) {
                 for (let key in UPG_DATA) {
@@ -425,10 +447,13 @@
             ctx.lineTo(15,  entity.radius * 2.5);
             ctx.fill();
 
-            // Cannoni — cannonCount rappresenta il numero di cannoni per lato (Livello 1:1, Livello 2:2, Livello 3:3)
+            // Cannoni per lato: replica la logica del server
+            // cannonCount (dal DTO) = cannoni per lato base (1/2/3)
+            // Galleon bonus: +1 per lato. NPC fallback: pirate=2, merchant=1
             ctx.fillStyle = '#111';
-            let cannonsPerSide = entity.cannonCount || (entity.type === 'pirate' ? 2 : 1);
-            if (entity.shipClass === 'galleon') cannonsPerSide++;
+            let cannonsPerSide = entity.cannonCount
+                || (entity.type === 'pirate' ? 2 : 1);  // NPC fallback
+            if (entity.shipClass === 'galleon') cannonsPerSide++;  // galleon bonus
             
             if (entity.shipClass === 'clipper' || entity.shipClass === 'caravel') {
                 // Clipper e Caravel: cannoni disegnati in avanti (allineati con la direzione di sparo)
@@ -596,20 +621,18 @@
             // Gestione firing asincrono
             handleShooting();
             
-            // ── Aggiornamento barra cooldown ──
-            const cooldownBar = document.getElementById('cooldown-fill');
-            if (cooldownBar) {
-                const now = Date.now();
-                const timeSinceShot = now - lastShootTime;
-                const cooldownPercent = Math.min((timeSinceShot / fireCooldown) * 100, 100);
-                
-                cooldownBar.style.width = `${cooldownPercent}%`;
-                
-                // Colore: rosso quando in cooldown, verde quando pronta
-                if (cooldownPercent >= 100) {
-                    cooldownBar.style.background = '#2ecc71';  // Verde - pronto
-                } else {
-                    cooldownBar.style.background = '#e74c3c';  // Rosso - in cooldown
+            // ── Aggiornamento barra cooldown (throttled: DOM solo se % cambia) ──
+            {
+                const nowMs = Date.now();
+                const timeSinceShot   = nowMs - lastShootTime;
+                const pct = Math.min((timeSinceShot / fireCooldown) * 100, 100) | 0; // intero 0-100
+                if (pct !== _lastCooldownPct) {
+                    _lastCooldownPct = pct;
+                    const cooldownBar = document.getElementById('cooldown-fill');
+                    if (cooldownBar) {
+                        cooldownBar.style.width = pct + '%';
+                        cooldownBar.style.background = pct >= 100 ? '#2ecc71' : '#e74c3c';
+                    }
                 }
             }
             
