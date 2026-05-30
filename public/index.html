@@ -262,19 +262,82 @@
             }
         });
 
-        socket.on('initIslands', (islands) => { localIslands = islands; drawMinimapBase(); });
-        socket.on('updateState', (newState) => { state = newState; updateUI(); });
+        socket.on('initIslands', (islands) => {
+            localIslands = islands;
+            drawMinimapBase();
+            // MOD 8: Precalcola l'offscreen canvas delle isole UNA SOLA VOLTA
+            buildIslandCache();
+        });
+
+        // ── MOD 7: Interpolazione client ────────────────────────────
+        // Il server invia aggiornamenti a 15Hz. Per mantenere il movimento
+        // fluido a 60 FPS usiamo renderX/renderY che inseguono x/y con lerp.
+        //
+        // Nota: il server ottimizzato invia players/npcs come ARRAY (DTO leggeri).
+        // Convertiamo in mappa indicizzata per id e preserviamo renderX/renderY
+        // tra un aggiornamento e l'altro.
+
+        socket.on('updateState', (newState) => {
+            // Converti array players → mappa per id (DTO server ottimizzato)
+            const newPlayers = {};
+            if (Array.isArray(newState.players)) {
+                for (const p of newState.players) {
+                    const prev = state.players[p.id];
+                    // Preserva renderX/renderY dall'aggiornamento precedente
+                    p.renderX = prev ? prev.renderX : p.x;
+                    p.renderY = prev ? prev.renderY : p.y;
+                    newPlayers[p.id] = p;
+                }
+            } else {
+                // fallback: server non ottimizzato (oggetto)
+                for (const id in newState.players) {
+                    const p = newState.players[id];
+                    const prev = state.players[id];
+                    p.renderX = prev ? prev.renderX : p.x;
+                    p.renderY = prev ? prev.renderY : p.y;
+                    newPlayers[id] = p;
+                }
+            }
+
+            // Converti array npcs → mappa per id
+            const newNpcs = {};
+            if (Array.isArray(newState.npcs)) {
+                for (const n of newState.npcs) {
+                    const prev = state.npcs[n.id];
+                    n.renderX = prev ? prev.renderX : n.x;
+                    n.renderY = prev ? prev.renderY : n.y;
+                    newNpcs[n.id] = n;
+                }
+            } else {
+                for (const id in newState.npcs) {
+                    const n = newState.npcs[id];
+                    const prev = state.npcs[id];
+                    n.renderX = prev ? prev.renderX : n.x;
+                    n.renderY = prev ? prev.renderY : n.y;
+                    newNpcs[id] = n;
+                }
+            }
+
+            state = { ...newState, players: newPlayers, npcs: newNpcs };
+            updateUI();
+        });
 
         function updateUI() {
             const p = state.players[socket.id];
             if (!p) return;
-            document.getElementById('goldAmount').innerText = p.gold;
+            // MOD 3: gold e upg arrivano in myData (campo privato per il destinatario)
+            const my = state.myData || {};
+
+            if (my.gold !== undefined)
+                document.getElementById('goldAmount').innerText = my.gold;
             
-            for(let key in UPG_DATA) {
-                const btn = document.getElementById('btn_' + key);
-                const lvl = p.upg[key];
-                if (lvl >= UPG_DATA[key].max) { btn.innerText = "MAX"; btn.disabled = true; } 
-                else { const cost = UPG_DATA[key].costs[lvl]; btn.innerText = `LVL ${lvl+1} (${cost}G)`; btn.disabled = p.gold < cost; }
+            if (my.upg) {
+                for(let key in UPG_DATA) {
+                    const btn = document.getElementById('btn_' + key);
+                    const lvl = my.upg[key];
+                    if (lvl >= UPG_DATA[key].max) { btn.innerText = "MAX"; btn.disabled = true; }
+                    else { const cost = UPG_DATA[key].costs[lvl]; btn.innerText = `LVL ${lvl+1} (${cost}G)`; btn.disabled = my.gold < cost; }
+                }
             }
 
             let lbHtml = "";
@@ -292,11 +355,23 @@
 
         function drawShip(entity, isNpc = false) {
             const now = Date.now();
-            if (entity.skills && entity.skills.smokeScreen && entity.skills.smokeScreen.activeUntil > now && entity.id !== socket.id) return;
+            // MOD 3: skills non è nel DTO generico. Per gli altri player semplicemente
+            // non applichiamo smoke (il server esclude già le navi in smoke dalla visibilità).
+            // Per il proprio player leggiamo da state.myData.
+            const mySkills = state.myData && state.myData.skills;
+            if (entity.id === socket.id && mySkills?.smokeScreen?.activeUntil > now) {
+                // Il proprio player in fumo: continua ma trasparente (gestito sotto)
+            } else if (!isNpc && entity.id !== socket.id) {
+                // Altri player: il server già non li manda se sono in smoke
+            }
+
+            // MOD 7: usa renderX/renderY (interpolati) per la posizione di disegno
+            const rx = entity.renderX !== undefined ? entity.renderX : entity.x;
+            const ry = entity.renderY !== undefined ? entity.renderY : entity.y;
 
             ctx.save();
-            ctx.translate(entity.x, entity.y);
-            ctx.rotate(entity.angle + Math.PI/2 + Math.PI); 
+            ctx.translate(rx, ry);
+            ctx.rotate(entity.angle + Math.PI/2 + Math.PI);
 
             ctx.fillStyle = 'rgba(255,255,255,0.2)';
             ctx.beginPath(); ctx.moveTo(0, entity.radius); ctx.lineTo(-15, entity.radius * 2.5); ctx.lineTo(15, entity.radius * 2.5); ctx.fill();
@@ -307,12 +382,13 @@
             
             for(let i=0; i<cps; i++) {
                 const off = (i - (cps-1)/2) * 15;
-                ctx.fillRect(-entity.radius - 4, off - 4, 8, 12); 
-                ctx.fillRect(entity.radius - 4, off - 4, 8, 12);  
+                ctx.fillRect(-entity.radius - 4, off - 4, 8, 12);
+                ctx.fillRect(entity.radius - 4, off - 4, 8, 12);
             }
 
-            const spriteSize = entity.radius * 3.5; 
-            if (entity.id === socket.id && entity.skills?.smokeScreen?.activeUntil > now) ctx.globalAlpha = 0.4;
+            const spriteSize = entity.radius * 3.5;
+            // Smoke semi-trasparente per il proprio player
+            if (entity.id === socket.id && mySkills?.smokeScreen?.activeUntil > now) ctx.globalAlpha = 0.4;
             
             if (entity.shipClass === 'galleon') ctx.filter = 'hue-rotate(90deg)';
             if (entity.shipClass === 'clipper') ctx.filter = 'hue-rotate(200deg)';
@@ -320,18 +396,62 @@
             ctx.drawImage(shipSprite, -spriteSize / 2, -spriteSize / 2, spriteSize, spriteSize);
             ctx.restore();
 
-            ctx.fillStyle = '#c0392b'; ctx.fillRect(entity.x - 20, entity.y - entity.radius - 20, 40, 6);
-            ctx.fillStyle = '#2ecc71'; ctx.fillRect(entity.x - 20, entity.y - entity.radius - 20, (entity.hp / (entity.maxHp||150)) * 40, 6);
+            // Barra HP e nome: posizionati su renderX/renderY
+            ctx.fillStyle = '#c0392b'; ctx.fillRect(rx - 20, ry - entity.radius - 20, 40, 6);
+            ctx.fillStyle = '#2ecc71'; ctx.fillRect(rx - 20, ry - entity.radius - 20, (entity.hp / (entity.maxHp||150)) * 40, 6);
             
-            ctx.fillStyle = '#fff'; ctx.font = 'bold 12px Arial'; ctx.textAlign = 'center'; 
-            const displayTag = entity.crew ? `[${entity.crew}] ` : "";
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 12px Arial'; ctx.textAlign = 'center';
+            const displayTag  = entity.crew ? `[${entity.crew}] ` : "";
             const displayName = isNpc ? (entity.type === 'merchant' ? 'Mercantile AI' : 'Pirata NPC') : displayTag + entity.name;
-            ctx.fillText(displayName, entity.x, entity.y - entity.radius - 25); 
+            ctx.fillText(displayName, rx, ry - entity.radius - 25);
             if (entity.shipClass) {
                 ctx.fillStyle = '#f1c40f'; ctx.font = '10px Arial';
-                ctx.fillText(`(${entity.shipClass})`, entity.x, entity.y - entity.radius - 38);
+                ctx.fillText(`(${entity.shipClass})`, rx, ry - entity.radius - 38);
             }
         }
+
+        // ── MOD 8: Offscreen canvas per le isole ────────────────────
+        // Le isole sono statiche: le disegniamo una sola volta su un canvas
+        // off-screen e poi usiamo ctx.drawImage() ad ogni frame.
+        let islandOffscreen = null;
+
+        function buildIslandCache() {
+            if (!localIslands || localIslands.length === 0) return;
+            // Crea un canvas grande come la mappa
+            islandOffscreen = document.createElement('canvas');
+            islandOffscreen.width  = MAP_SIZE;
+            islandOffscreen.height = MAP_SIZE;
+            const offCtx = islandOffscreen.getContext('2d');
+
+            // Riempi con la texture isola (o colore fallback)
+            if (islandTexture.complete && islandTexture.naturalWidth > 0) {
+                const pat = offCtx.createPattern(islandTexture, 'repeat');
+                if (pat) offCtx.fillStyle = pat;
+                else     offCtx.fillStyle = '#e3bc8d';
+            } else {
+                offCtx.fillStyle = '#e3bc8d';
+            }
+
+            offCtx.strokeStyle = '#27ae60';
+            offCtx.lineWidth   = 12;
+
+            for (const is of localIslands) {
+                offCtx.beginPath();
+                for (let i = 0; i < is.points.length; i++) {
+                    const pt = is.points[i];
+                    const px = is.x + Math.cos(pt.angle) * pt.r;
+                    const py = is.y + Math.sin(pt.angle) * pt.r;
+                    if (i === 0) offCtx.moveTo(px, py);
+                    else         offCtx.lineTo(px, py);
+                }
+                offCtx.closePath();
+                offCtx.fill();
+                offCtx.stroke();
+            }
+        }
+
+        // Ricostruisce la cache dopo che la texture isola è caricata
+        islandTexture.onload = () => { if (localIslands.length > 0) buildIslandCache(); };
 
         let minimapCache = null;
         function drawMinimapBase() {
@@ -388,6 +508,21 @@
             
 
             if (myShip) {
+                // ── MOD 7: Aggiorna renderX/renderY per tutti i player e NPC ─
+                // Il lerp smussato a 0.15 produce movimento fluido anche a 15Hz di rete.
+                for (const id in state.players) {
+                    const ent = state.players[id];
+                    if (ent.renderX === undefined) { ent.renderX = ent.x; ent.renderY = ent.y; }
+                    ent.renderX += (ent.x - ent.renderX) * 0.15;
+                    ent.renderY += (ent.y - ent.renderY) * 0.15;
+                }
+                for (const id in state.npcs) {
+                    const ent = state.npcs[id];
+                    if (ent.renderX === undefined) { ent.renderX = ent.x; ent.renderY = ent.y; }
+                    ent.renderX += (ent.x - ent.renderX) * 0.15;
+                    ent.renderY += (ent.y - ent.renderY) * 0.15;
+                }
+
                 ctx.save();
                 
                 let dxShake = 0, dyShake = 0;
@@ -398,7 +533,8 @@
                     if (screenShake < 0.5) screenShake = 0;
                 }
                 
-                ctx.translate(canvas.width / 2 - myShip.x + dxShake, canvas.height / 2 - myShip.y + dyShake);
+                // MOD 7: usa renderX/renderY per la camera (movimento fluido)
+                ctx.translate(canvas.width / 2 - myShip.renderX + dxShake, canvas.height / 2 - myShip.renderY + dyShake);
                 // Acqua ancorata alla mappa
 if (waterTexture.complete && waterTexture.naturalWidth > 0) {
     const pattern = ctx.createPattern(waterTexture, 'repeat');
@@ -421,29 +557,48 @@ if (waterTexture.complete && waterTexture.naturalWidth > 0) {
         MAP_SIZE + 1000
     );
 }
-                // Isole con Texture
-                if (islandTexture.complete) {
-                    ctx.fillStyle = ctx.createPattern(islandTexture, 'repeat');
+                // ── MOD 8: Isole da offscreen canvas (zero poligoni per frame) ──
+                if (islandOffscreen) {
+                    ctx.drawImage(islandOffscreen, 0, 0);
                 } else {
-                    ctx.fillStyle = '#e3bc8d';
-                }
-                ctx.strokeStyle = '#27ae60'; ctx.lineWidth = 12; 
-                for (let is of localIslands) {
-                    ctx.beginPath();
-                    for (let i = 0; i < is.points.length; i++) {
-                        const p = is.points[i];
-                        const px = is.x + Math.cos(p.angle) * p.r;
-                        const py = is.y + Math.sin(p.angle) * p.r;
-                        if(i===0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+                    // Fallback: disegno diretto finché la cache non è pronta
+                    if (islandTexture.complete) {
+                        ctx.fillStyle = ctx.createPattern(islandTexture, 'repeat');
+                    } else {
+                        ctx.fillStyle = '#e3bc8d';
                     }
-                    ctx.closePath(); ctx.fill(); ctx.stroke();
+                    ctx.strokeStyle = '#27ae60'; ctx.lineWidth = 12;
+                    for (let is of localIslands) {
+                        ctx.beginPath();
+                        for (let i = 0; i < is.points.length; i++) {
+                            const p = is.points[i];
+                            const px = is.x + Math.cos(p.angle) * p.r;
+                            const py = is.y + Math.sin(p.angle) * p.r;
+                            if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+                        }
+                        ctx.closePath(); ctx.fill(); ctx.stroke();
+                    }
                 }
 
                 let fov = myShip.shipClass === 'caravel' ? 1400 : 1100;
 
+                // ── MOD 6: Visibility Culling lato client ──────────────────
+                // Non disegnare nulla fuori dallo schermo + un margine di 500px.
+                // Usa renderX/renderY (interpolati) per il test di visibilità.
+                const DRAW_MARGIN = 500;
+                const halfW = canvas.width  / 2 + DRAW_MARGIN;
+                const halfH = canvas.height / 2 + DRAW_MARGIN;
+                // In coordinate mondo la "finestra" centrata su myShip.renderX/Y
+                function isVisible(wx, wy) {
+                    return Math.abs(wx - myShip.renderX) <= halfW &&
+                           Math.abs(wy - myShip.renderY) <= halfH;
+                }
+
                 if (state.resources) {
                     state.resources.forEach(res => {
-                        if (Math.hypot(res.x - myShip.x, res.y - myShip.y) > fov) return;
+                        // MOD 6: skip se fuori schermo
+                        if (!isVisible(res.x, res.y)) return;
+                        // (il server manda già solo risorse entro VIEW_DISTANCE)
                         ctx.fillStyle = '#a0522d';
                         ctx.beginPath(); ctx.arc(res.x, res.y, res.radius, 0, Math.PI * 2); ctx.fill();
                         ctx.fillStyle = '#f1c40f';
@@ -451,8 +606,8 @@ if (waterTexture.complete && waterTexture.naturalWidth > 0) {
                     });
                 }
 
-                // Kraken Rendering Aggiornato
-                if (state.kraken && Math.hypot(state.kraken.x - myShip.x, state.kraken.y - myShip.y) <= fov + 200) {
+                // Kraken Rendering
+                if (state.kraken && isVisible(state.kraken.x, state.kraken.y)) {  // MOD 6
                     const size = state.kraken.radius * 2.5;
                     if (krakenSprite.complete) {
                         ctx.drawImage(krakenSprite, state.kraken.x - size/2, state.kraken.y - size/2, size, size);
@@ -460,22 +615,24 @@ if (waterTexture.complete && waterTexture.naturalWidth > 0) {
                         ctx.fillStyle = '#8e44ad';
                         ctx.beginPath(); ctx.arc(state.kraken.x, state.kraken.y, state.kraken.radius, 0, Math.PI*2); ctx.fill();
                     }
-                    
                     ctx.fillStyle = '#c0392b'; ctx.fillRect(state.kraken.x - 50, state.kraken.y - state.kraken.radius - 20, 100, 8);
                     ctx.fillStyle = '#2ecc71'; ctx.fillRect(state.kraken.x - 50, state.kraken.y - state.kraken.radius - 20, (state.kraken.hp / state.kraken.maxHp) * 100, 8);
                 }
 
-                if (state.specialTreasure) {
+                if (state.specialTreasure && isVisible(state.specialTreasure.x, state.specialTreasure.y)) {  // MOD 6
                     const res = state.specialTreasure;
                     ctx.fillStyle = '#d35400'; ctx.fillRect(res.x - res.radius, res.y - res.radius, res.radius*2, res.radius*2);
                     ctx.fillStyle = '#f1c40f'; ctx.font = 'bold 14px Arial'; ctx.textAlign = 'center'; ctx.fillText("TESORO", res.x, res.y - res.radius - 8);
                 }
 
+                // MOD 6+7: Disegna solo le navi visibili, usando renderX/renderY
                 for (let id in state.npcs) {
-                    if (Math.hypot(state.npcs[id].x - myShip.x, state.npcs[id].y - myShip.y) <= fov) drawShip(state.npcs[id], true);
+                    const n = state.npcs[id];
+                    if (isVisible(n.renderX, n.renderY)) drawShip(n, true);
                 }
-                for (let id in state.players) { 
-                    if (!state.players[id].isDead && Math.hypot(state.players[id].x - myShip.x, state.players[id].y - myShip.y) <= fov) drawShip(state.players[id], false); 
+                for (let id in state.players) {
+                    const p = state.players[id];
+                    if (!p.isDead && isVisible(p.renderX, p.renderY)) drawShip(p, false);
                 }
 
                 for (let i = particles.length - 1; i >= 0; i--) {
@@ -488,10 +645,10 @@ if (waterTexture.complete && waterTexture.naturalWidth > 0) {
                 }
 
                 ctx.fillStyle = '#222';
-                for (let b of state.bullets) { 
-                    if (Math.hypot(b.x - myShip.x, b.y - myShip.y) <= fov) {
-                        ctx.beginPath(); ctx.arc(b.x, b.y, 5, 0, Math.PI * 2); ctx.fill(); 
-                    }
+                for (let b of state.bullets) {
+                    // MOD 6: skip proiettili fuori schermo
+                    if (!isVisible(b.x, b.y)) continue;
+                    ctx.beginPath(); ctx.arc(b.x, b.y, 5, 0, Math.PI * 2); ctx.fill();
                 }
                 ctx.restore();
                 
