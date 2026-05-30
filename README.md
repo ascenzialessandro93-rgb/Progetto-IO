@@ -2,7 +2,7 @@
 title: OnePirate.io
 emoji: 🏴‍☠️
 colorFrom: blue
-colorTo: black
+colorTo: gray
 sdk: docker
 pinned: false
 ---
