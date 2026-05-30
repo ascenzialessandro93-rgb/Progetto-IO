@@ -472,6 +472,35 @@ const _myData = {
 };
 
 // ═══════════════════════════════════════════════════════════════
+//  AoI HELPER — invia effetti solo ai player vicini
+// ═══════════════════════════════════════════════════════════════
+/**
+ * emitEffectToNearby
+ * 
+ * Invia un effetto visivo solo ai player che si trovano entro EFFECT_RANGE
+ * dalla posizione specificata. Questo riduce drasticamente il traffico di rete
+ * perché gli effetti (hit, explosion) vengono inviati solo a chi può vederli.
+ */
+const EFFECT_RANGE = 2000;  // Raggio slightly più grande di VIEW_DISTANCE per anticipazione
+function emitEffectToNearby(effectData, x, y) {
+    // Usa shipGrid per trovare player vicini in O(1) medio
+    const nearby = shipGrid.query(x, y, EFFECT_RANGE);
+    for (let k = 0; k < nearby.length; k++) {
+        const e = nearby[k];
+        // Salta NPC e kraken
+        if (e._isNpc || e.id === 'kraken') continue;
+        
+        // Verifica distanza precisa
+        const dx = e.x - x;
+        const dy = e.y - y;
+        if (dx * dx + dy * dy <= EFFECT_RANGE * EFFECT_RANGE) {
+            const sock = io.sockets.sockets.get(e.id);
+            if (sock) sock.emit('effect', effectData);
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  PAYLOAD BUILDER — visibility culling per-player
 // ═══════════════════════════════════════════════════════════════
 /**
@@ -489,19 +518,23 @@ function buildStateForPlayer(p, leaderboard) {
     const px = p.x;
     const py = p.y;
 
-    // ── Players vicini ─────────────────────────────────────
+    // ── Players vicini (via shipGrid) ───────────────────────
+    // Ottimizzazione AoI: usa shipGrid invece di iterare su tutti i players
+    // Questo riduce la complessità da O(n) a O(1) medio per query
     _nearPlayers.length = 0;
-    for (const id in players) {
-        const op = players[id];
-        const dx = op.x - px;
-        const dy = op.y - py;
+    const playerCands = shipGrid.query(px, py, VIEW_DISTANCE);
+    for (let k = 0; k < playerCands.length; k++) {
+        const e = playerCands[k];
+        // Salta NPC e kraken (sono nella stessa grid)
+        if (e._isNpc || e.id === 'kraken') continue;
+        // Verifica distanza precisa (la grid può includere falsi positivi ai bordi)
+        const dx = e.x - px;
+        const dy = e.y - py;
         if (dx * dx + dy * dy <= VD_SQ) {
-            // Nota: playerDTO scrive su _pDto e lo ritorna.
-            // socket.emit serializza prima che il loop continui → safe.
             _nearPlayers.push({
-                id: op.id, x: op.x, y: op.y, angle: op.angle,
-                hp: op.hp, maxHp: op.maxHp, radius: op.radius,
-                name: op.name, crew: op.crew, shipClass: op.shipClass, isDead: op.isDead,
+                id: e.id, x: e.x, y: e.y, angle: e.angle,
+                hp: e.hp, maxHp: e.maxHp, radius: e.radius,
+                name: e.name, crew: e.crew, shipClass: e.shipClass, isDead: e.isDead,
             });
         }
     }
@@ -1036,10 +1069,10 @@ function updatePhysics() {
                     if (ref.isDead || ref.id === b.playerId || (b.crew && b.crew === ref.crew)) continue;
                     ref.hp -= b.dmg;
                     hit = true;
-                    io.emit('effect', { type: 'hit', x: b.x, y: b.y, targetId: ref.id });
+                    emitEffectToNearby({ type: 'hit', x: b.x, y: b.y, targetId: ref.id }, b.x, b.y);
                     if (ref.hp <= 0) {
                         ref.isDead = true;
-                        io.emit('effect', { type: 'explosion', x: ref.x, y: ref.y });
+                        emitEffectToNearby({ type: 'explosion', x: ref.x, y: ref.y }, ref.x, ref.y);
                         io.emit('chatMessage', { sender: 'SISTEMA', text: `☠️ ${ref.name} è affondato.`, type: 'system' });
                         if (players[b.playerId]) players[b.playerId].gold += 150;
                         const pid = ref.id;
@@ -1055,10 +1088,10 @@ function updatePhysics() {
                     if (ref.id === b.playerId) continue;
                     ref.hp -= b.dmg;
                     hit = true;
-                    io.emit('effect', { type: 'hit', x: b.x, y: b.y, targetId: ref.id });
+                    emitEffectToNearby({ type: 'hit', x: b.x, y: b.y, targetId: ref.id }, b.x, b.y);
                     if (ref.hp <= 0) {
                         if (players[b.playerId]) players[b.playerId].gold += ref.goldValue;
-                        io.emit('effect', { type: 'explosion', x: ref.x, y: ref.y });
+                        emitEffectToNearby({ type: 'explosion', x: ref.x, y: ref.y }, ref.x, ref.y);
                         delete npcs[ref.id];
                         npcCount--;
                     }
@@ -1069,10 +1102,10 @@ function updatePhysics() {
                     if (b.playerId === 'kraken') continue;
                     kraken.hp -= b.dmg;
                     hit = true;
-                    io.emit('effect', { type: 'hit', x: b.x, y: b.y, color: 'purple' });
+                    emitEffectToNearby({ type: 'hit', x: b.x, y: b.y, color: 'purple' }, b.x, b.y);
                     if (kraken.hp <= 0) {
                         if (players[b.playerId]) players[b.playerId].gold += 2500;
-                        io.emit('effect', { type: 'explosion', x: kraken.x, y: kraken.y });
+                        emitEffectToNearby({ type: 'explosion', x: kraken.x, y: kraken.y }, kraken.x, kraken.y);
                         io.emit('chatMessage', { sender: 'SISTEMA', text: '🦑 IL KRAKEN È STATO SCONFITTO! Tornerà tra 7 minuti.', type: 'system' });
                         krakenDeathTick = globalTicks;
                         kraken = null;
@@ -1101,7 +1134,7 @@ const _allShipsBuf = [];
 setInterval(updatePhysics,      PHYSICS_MS);   // 30 Hz
 setInterval(sendNetworkUpdates, NETWORK_MS);   // 20 Hz
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 7860;
 http.listen(PORT, () => console.log(`[Corsari.io] Server online — porta ${PORT} | Physics ${PHYSICS_HZ}Hz | Network ${NETWORK_HZ}Hz`));
 
 // ═══════════════════════════════════════════════════════════════

@@ -303,41 +303,116 @@
             buildIslandCache();
         });
 
-        // ── MOD 7: Interpolazione client ────────────────────────────
-        // Il server invia aggiornamenti a 15Hz. Per mantenere il movimento
-        // fluido a 60 FPS usiamo renderX/renderY che inseguono x/y con lerp.
+        // ── MOD 7: Interpolazione client con Lerp basato sul tempo ─────
+        // Il server invia aggiornamenti a 20Hz. Per mantenere il movimento
+        // fluido a 60 FPS usiamo interpolazione lineare basata sul delta time.
         //
-        // Nota: il server ottimizzato invia players/npcs come ARRAY (DTO leggeri).
-        // Convertiamo in mappa indicizzata per id e preserviamo renderX/renderY
-        // tra un aggiornamento e l'altro.
+        // Sistema di interpolazione:
+        // - targetX/targetY: posizione ricevuta dal server (destinazione)
+        // - prevX/prevY: posizione precedente all'ultimo aggiornamento
+        // - renderX/renderY: posizione interpolata corrente (usata per rendering)
+        // - lastUpdateTime: timestamp dell'ultimo aggiornamento ricevuto
+        // - interpolationFactor: fattore calcolato dinamicamente basato sul tempo
 
-        // ── updateState — server_pro emette SEMPRE array per players e npcs ──
-        // Network tick: 20 Hz → lerp a 0.18 per interpolazione ancora fluida.
+        const NETWORK_HZ = 20;  // Server invia a 20Hz
+        const NETWORK_MS = 1000 / NETWORK_HZ;  // 50ms tra aggiornamenti
+
         socket.on('updateState', (newState) => {
-            // Players: array → mappa per id, preserve renderX/renderY
+            const now = Date.now();
+
+            // Players: array → mappa per id, setup interpolazione
             const newPlayers = {};
             const pArr = newState.players;
             for (let i = 0; i < pArr.length; i++) {
                 const p    = pArr[i];
                 const prev = state.players[p.id];
-                p.renderX  = prev ? prev.renderX : p.x;
-                p.renderY  = prev ? prev.renderY : p.y;
+
+                if (prev) {
+                    // Salva la posizione corrente render come previous
+                    p.prevX = prev.renderX !== undefined ? prev.renderX : prev.x;
+                    p.prevY = prev.renderY !== undefined ? prev.renderY : prev.y;
+                    p.prevAngle = prev.renderAngle !== undefined ? prev.renderAngle : prev.angle;
+                    // La nuova posizione dal server diventa il target
+                    p.targetX = p.x;
+                    p.targetY = p.y;
+                    p.targetAngle = p.angle;
+                    // Inizializza render alla previous position
+                    p.renderX = p.prevX;
+                    p.renderY = p.prevY;
+                    p.renderAngle = p.prevAngle;
+                } else {
+                    // Prima volta: nessuna interpolazione
+                    p.prevX = p.x;
+                    p.prevY = p.y;
+                    p.prevAngle = p.angle;
+                    p.targetX = p.x;
+                    p.targetY = p.y;
+                    p.targetAngle = p.angle;
+                    p.renderX = p.x;
+                    p.renderY = p.y;
+                    p.renderAngle = p.angle;
+                }
+                p.lastUpdateTime = now;
                 newPlayers[p.id] = p;
             }
 
-            // NPCs: array → mappa per id, preserve renderX/renderY
+            // NPCs: array → mappa per id, setup interpolazione
             const newNpcs = {};
             const nArr = newState.npcs;
             for (let i = 0; i < nArr.length; i++) {
                 const n    = nArr[i];
                 const prev = state.npcs[n.id];
-                n.renderX  = prev ? prev.renderX : n.x;
-                n.renderY  = prev ? prev.renderY : n.y;
+
+                if (prev) {
+                    n.prevX = prev.renderX !== undefined ? prev.renderX : prev.x;
+                    n.prevY = prev.renderY !== undefined ? prev.renderY : prev.y;
+                    n.prevAngle = prev.renderAngle !== undefined ? prev.renderAngle : prev.angle;
+                    n.targetX = n.x;
+                    n.targetY = n.y;
+                    n.targetAngle = n.angle;
+                    n.renderX = n.prevX;
+                    n.renderY = n.prevY;
+                    n.renderAngle = n.prevAngle;
+                } else {
+                    n.prevX = n.x;
+                    n.prevY = n.y;
+                    n.prevAngle = n.angle;
+                    n.targetX = n.x;
+                    n.targetY = n.y;
+                    n.targetAngle = n.angle;
+                    n.renderX = n.x;
+                    n.renderY = n.y;
+                    n.renderAngle = n.angle;
+                }
+                n.lastUpdateTime = now;
                 newNpcs[n.id] = n;
             }
 
             // Risorse: array diretto (il server le invia già filtrate per VIEW_DISTANCE)
             state = { ...newState, players: newPlayers, npcs: newNpcs };
+            
+            // Interpolazione Kraken
+            if (state.kraken) {
+                const prevKraken = state.kraken;
+                if (prevKraken.prevX === undefined) {
+                    prevKraken.prevX = prevKraken.x;
+                    prevKraken.prevY = prevKraken.y;
+                    prevKraken.targetX = prevKraken.x;
+                    prevKraken.targetY = prevKraken.y;
+                    prevKraken.renderX = prevKraken.x;
+                    prevKraken.renderY = prevKraken.y;
+                    prevKraken.lastUpdateTime = now;
+                } else {
+                    prevKraken.prevX = prevKraken.renderX;
+                    prevKraken.prevY = prevKraken.renderY;
+                    prevKraken.targetX = prevKraken.x;
+                    prevKraken.targetY = prevKraken.y;
+                    prevKraken.renderX = prevKraken.renderX;
+                    prevKraken.renderY = prevKraken.renderY;
+                    prevKraken.lastUpdateTime = now;
+                }
+            }
+            
             updateUI();
         });
 
@@ -402,13 +477,14 @@
             const now      = Date.now();
             const mySkills = state.myData && state.myData.skills;
 
-            // renderX/renderY: interpolati nel loop draw() — usa come posizione di rendering
+            // renderX/renderY/renderAngle: interpolati nel loop draw() — usa come posizione di rendering
             const rx = entity.renderX !== undefined ? entity.renderX : entity.x;
             const ry = entity.renderY !== undefined ? entity.renderY : entity.y;
+            const rAngle = entity.renderAngle !== undefined ? entity.renderAngle : entity.angle;
 
             ctx.save();
             ctx.translate(rx, ry);
-            ctx.rotate(entity.angle + Math.PI / 2 + Math.PI);
+            ctx.rotate(rAngle + Math.PI / 2 + Math.PI);
 
             // Scia della nave
             ctx.fillStyle = 'rgba(255,255,255,0.15)';
@@ -537,21 +613,28 @@
             
             if (state.kraken) {
                 mCtx.fillStyle = '#8e44ad';
-                mCtx.beginPath(); mCtx.arc(state.kraken.x * scale, state.kraken.y * scale, 6, 0, Math.PI*2); mCtx.fill();
+                const kx = state.kraken.renderX !== undefined ? state.kraken.renderX : state.kraken.x;
+                const ky = state.kraken.renderY !== undefined ? state.kraken.renderY : state.kraken.y;
+                mCtx.beginPath(); mCtx.arc(kx * scale, ky * scale, 6, 0, Math.PI*2); mCtx.fill();
             }
 
             for(let id in state.npcs) {
-                mCtx.fillStyle = state.npcs[id].type === 'merchant' ? 'orange' : 'purple';
-                mCtx.fillRect(state.npcs[id].x * scale, state.npcs[id].y * scale, 3, 3);
+                const npc = state.npcs[id];
+                const nx = npc.renderX !== undefined ? npc.renderX : npc.x;
+                const ny = npc.renderY !== undefined ? npc.renderY : npc.y;
+                mCtx.fillStyle = npc.type === 'merchant' ? 'orange' : 'purple';
+                mCtx.fillRect(nx * scale, ny * scale, 3, 3);
             }
             const myShip = state.players[socket.id];
             for(let id in state.players) {
                 if(state.players[id].isDead) continue;
                 const p = state.players[id];
+                const px = p.renderX !== undefined ? p.renderX : p.x;
+                const py = p.renderY !== undefined ? p.renderY : p.y;
                 if (id === socket.id) mCtx.fillStyle = '#2ecc71';
                 else if (myShip && myShip.crew && myShip.crew === p.crew) mCtx.fillStyle = '#3498db'; 
                 else mCtx.fillStyle = '#e74c3c';
-                mCtx.beginPath(); mCtx.arc(p.x * scale, p.y * scale, id === socket.id ? 4 : 3, 0, Math.PI*2); mCtx.fill();
+                mCtx.beginPath(); mCtx.arc(px * scale, py * scale, id === socket.id ? 4 : 3, 0, Math.PI*2); mCtx.fill();
             }
             if (state.specialTreasure) {
                 mCtx.fillStyle = '#f1c40f';
@@ -565,19 +648,97 @@
             
 
             if (myShip) {
-                // ── MOD 7: Aggiorna renderX/renderY per tutti i player e NPC ─
-                // Il lerp smussato a 0.15 produce movimento fluido anche a 15Hz di rete.
+                // ── MOD 7: Interpolazione lineare basata sul tempo (Lerp) ─
+                // Calcola il fattore di interpolazione basato sul tempo trascorso
+                // dall'ultimo aggiornamento di rete per movimenti fluidi a 60fps.
+                const now = Date.now();
+
+                // Funzione helper per Linear Interpolation
+                const lerp = (start, end, t) => start + (end - start) * t;
+
+                // Interpolazione Players
                 for (const id in state.players) {
                     const ent = state.players[id];
-                    if (ent.renderX === undefined) { ent.renderX = ent.x; ent.renderY = ent.y; }
-                    ent.renderX += (ent.x - ent.renderX) * 0.18;
-                    ent.renderY += (ent.y - ent.renderY) * 0.18;
+                    
+                    // Se non abbiamo i dati di interpolazione, inizializza
+                    if (ent.prevX === undefined) {
+                        ent.prevX = ent.x;
+                        ent.prevY = ent.y;
+                        ent.prevAngle = ent.angle;
+                        ent.targetX = ent.x;
+                        ent.targetY = ent.y;
+                        ent.targetAngle = ent.angle;
+                        ent.renderX = ent.x;
+                        ent.renderY = ent.y;
+                        ent.renderAngle = ent.angle;
+                        ent.lastUpdateTime = now;
+                        continue;
+                    }
+
+                    // Calcola il tempo trascorso dall'ultimo aggiornamento
+                    const timeSinceUpdate = now - ent.lastUpdateTime;
+                    
+                    // Calcola il fattore di interpolazione (0 a 1)
+                    // Usiamo NETWORK_MS come base per normalizzare il tempo
+                    // Clamp tra 0 e 1 per evitare overshooting
+                    let t = Math.min(timeSinceUpdate / NETWORK_MS, 1);
+                    
+                    // Per movimenti più fluidi, usiamo una curva di easing (smoothstep)
+                    t = t * t * (3 - 2 * t);  // Smoothstep per movimenti più morbidi
+
+                    // Interpola tra prev e target
+                    ent.renderX = lerp(ent.prevX, ent.targetX, t);
+                    ent.renderY = lerp(ent.prevY, ent.targetY, t);
+                    
+                    // Interpolazione angolo con wrapping (gestisce il caso -PI a +PI)
+                    let angleDiff = ent.targetAngle - ent.prevAngle;
+                    // Normalizza la differenza angolare nel range [-PI, PI]
+                    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                    ent.renderAngle = ent.prevAngle + angleDiff * t;
                 }
+
+                // Interpolazione NPCs
                 for (const id in state.npcs) {
                     const ent = state.npcs[id];
-                    if (ent.renderX === undefined) { ent.renderX = ent.x; ent.renderY = ent.y; }
-                    ent.renderX += (ent.x - ent.renderX) * 0.18;
-                    ent.renderY += (ent.y - ent.renderY) * 0.18;
+                    
+                    if (ent.prevX === undefined) {
+                        ent.prevX = ent.x;
+                        ent.prevY = ent.y;
+                        ent.prevAngle = ent.angle;
+                        ent.targetX = ent.x;
+                        ent.targetY = ent.y;
+                        ent.targetAngle = ent.angle;
+                        ent.renderX = ent.x;
+                        ent.renderY = ent.y;
+                        ent.renderAngle = ent.angle;
+                        ent.lastUpdateTime = now;
+                        continue;
+                    }
+
+                    const timeSinceUpdate = now - ent.lastUpdateTime;
+                    let t = Math.min(timeSinceUpdate / NETWORK_MS, 1);
+                    t = t * t * (3 - 2 * t);  // Smoothstep
+                    
+                    ent.renderX = lerp(ent.prevX, ent.targetX, t);
+                    ent.renderY = lerp(ent.prevY, ent.targetY, t);
+                    
+                    // Interpolazione angolo con wrapping
+                    let angleDiff = ent.targetAngle - ent.prevAngle;
+                    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                    ent.renderAngle = ent.prevAngle + angleDiff * t;
+                }
+
+                // Interpolazione Kraken
+                if (state.kraken && state.kraken.prevX !== undefined) {
+                    const kraken = state.kraken;
+                    const timeSinceUpdate = now - kraken.lastUpdateTime;
+                    let t = Math.min(timeSinceUpdate / NETWORK_MS, 1);
+                    t = t * t * (3 - 2 * t);  // Smoothstep
+                    
+                    kraken.renderX = lerp(kraken.prevX, kraken.targetX, t);
+                    kraken.renderY = lerp(kraken.prevY, kraken.targetY, t);
                 }
 
                 ctx.save();
@@ -642,16 +803,20 @@
                 }
 
                 // Kraken Rendering
-                if (state.kraken && isVisible(state.kraken.x, state.kraken.y)) {  // MOD 6
-                    const size = state.kraken.radius * 2.5;
-                    if (krakenSprite.complete) {
-                        ctx.drawImage(krakenSprite, state.kraken.x - size/2, state.kraken.y - size/2, size, size);
-                    } else {
-                        ctx.fillStyle = '#8e44ad';
-                        ctx.beginPath(); ctx.arc(state.kraken.x, state.kraken.y, state.kraken.radius, 0, Math.PI*2); ctx.fill();
+                if (state.kraken) {
+                    const kx = state.kraken.renderX !== undefined ? state.kraken.renderX : state.kraken.x;
+                    const ky = state.kraken.renderY !== undefined ? state.kraken.renderY : state.kraken.y;
+                    if (isVisible(kx, ky)) {  // MOD 6
+                        const size = state.kraken.radius * 2.5;
+                        if (krakenSprite.complete) {
+                            ctx.drawImage(krakenSprite, kx - size/2, ky - size/2, size, size);
+                        } else {
+                            ctx.fillStyle = '#8e44ad';
+                            ctx.beginPath(); ctx.arc(kx, ky, state.kraken.radius, 0, Math.PI*2); ctx.fill();
+                        }
+                        ctx.fillStyle = '#c0392b'; ctx.fillRect(kx - 50, ky - state.kraken.radius - 20, 100, 8);
+                        ctx.fillStyle = '#2ecc71'; ctx.fillRect(kx - 50, ky - state.kraken.radius - 20, (state.kraken.hp / state.kraken.maxHp) * 100, 8);
                     }
-                    ctx.fillStyle = '#c0392b'; ctx.fillRect(state.kraken.x - 50, state.kraken.y - state.kraken.radius - 20, 100, 8);
-                    ctx.fillStyle = '#2ecc71'; ctx.fillRect(state.kraken.x - 50, state.kraken.y - state.kraken.radius - 20, (state.kraken.hp / state.kraken.maxHp) * 100, 8);
                 }
 
                 if (state.specialTreasure && isVisible(state.specialTreasure.x, state.specialTreasure.y)) {  // MOD 6
