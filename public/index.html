@@ -370,7 +370,7 @@
         });
 
         // ── MOD 7: Interpolazione client con Lerp basato sul tempo ─────
-        // Il server invia aggiornamenti a 20Hz. Per mantenere il movimento
+        // Il server invia aggiornamenti a 15Hz. Per mantenere il movimento
         // fluido a 60 FPS usiamo interpolazione lineare basata sul delta time.
         //
         // Sistema di interpolazione:
@@ -380,8 +380,8 @@
         // - lastUpdateTime: timestamp dell'ultimo aggiornamento ricevuto
         // - interpolationFactor: fattore calcolato dinamicamente basato sul tempo
 
-        const NETWORK_HZ = 20;  // Server invia a 20Hz
-        const NETWORK_MS = 1000 / NETWORK_HZ;  // 50ms tra aggiornamenti
+        const NETWORK_HZ = 15;  // Server invia a 15Hz (ridotto per ottimizzazione banda)
+        const NETWORK_MS = 1000 / NETWORK_HZ;  // 66.7ms tra aggiornamenti
 
         socket.on('updateState', (newState) => {
             const now = Date.now();
@@ -402,10 +402,10 @@
                     p.targetX = p.x;
                     p.targetY = p.y;
                     p.targetAngle = p.angle;
-                    // Inizializza render alla previous position
-                    p.renderX = p.prevX;
-                    p.renderY = p.prevY;
-                    p.renderAngle = p.prevAngle;
+                    // MANTIENI la posizione render corrente per continuità dell'interpolazione
+                    p.renderX = prev.renderX !== undefined ? prev.renderX : prev.x;
+                    p.renderY = prev.renderY !== undefined ? prev.renderY : prev.y;
+                    p.renderAngle = prev.renderAngle !== undefined ? prev.renderAngle : prev.angle;
                 } else {
                     // Prima volta: nessuna interpolazione
                     p.prevX = p.x;
@@ -436,9 +436,10 @@
                     n.targetX = n.x;
                     n.targetY = n.y;
                     n.targetAngle = n.angle;
-                    n.renderX = n.prevX;
-                    n.renderY = n.prevY;
-                    n.renderAngle = n.prevAngle;
+                    // MANTIENI la posizione render corrente per continuità dell'interpolazione
+                    n.renderX = prev.renderX !== undefined ? prev.renderX : prev.x;
+                    n.renderY = prev.renderY !== undefined ? prev.renderY : prev.y;
+                    n.renderAngle = prev.renderAngle !== undefined ? prev.renderAngle : prev.angle;
                 } else {
                     n.prevX = n.x;
                     n.prevY = n.y;

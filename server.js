@@ -52,9 +52,9 @@ const VIEW_DISTANCE  = 1800;
 const VD_SQ          = VIEW_DISTANCE * VIEW_DISTANCE;
 
 const PHYSICS_HZ     = 30;
-const NETWORK_HZ     = 20;
+const NETWORK_HZ     = 15;  // Ridotto a 15Hz (66ms) per ridurre consumo banda su Hugging Face
 const PHYSICS_MS     = 1000 / PHYSICS_HZ;   // ~33.3 ms
-const NETWORK_MS     = 1000 / NETWORK_HZ;   //  50 ms
+const NETWORK_MS     = 1000 / NETWORK_HZ;   //  66.7 ms
 
 const MAX_NPCS       = 25;
 const MAX_BULLETS    = 512;   // hard cap → pool size fissa
