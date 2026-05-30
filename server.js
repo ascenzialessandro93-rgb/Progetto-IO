@@ -258,16 +258,48 @@ setInterval(() => {
         if (p.skills.speedBoost.activeUntil > now) currentSpeed *= 1.6;
 
         if (p.targetX !== null && p.targetY !== null) {
-            const dx = p.targetX - p.x; const dy = p.targetY - p.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist > 8) {
-                p.angle = Math.atan2(dy, dx);
-                p.x += (dx / dist) * currentSpeed;
-                p.y += (dy / dist) * currentSpeed;
-            } else {
-                p.targetX = null; p.targetY = null;
-            }
-        }
+    const dx = p.targetX - p.x;
+    const dy = p.targetY - p.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist > 8) {
+
+        const targetAngle = Math.atan2(dy, dx);
+
+        let angleDiff = targetAngle - p.angle;
+
+        while (angleDiff > Math.PI)
+            angleDiff -= Math.PI * 2;
+
+        while (angleDiff < -Math.PI)
+            angleDiff += Math.PI * 2;
+
+        let turnRate = 0.05;
+
+        if (p.shipClass === 'galleon')
+            turnRate = 0.025;
+
+        if (p.shipClass === 'caravel')
+            turnRate = 0.04;
+
+        if (p.shipClass === 'clipper')
+            turnRate = 0.07;
+
+        if (angleDiff > turnRate)
+            p.angle += turnRate;
+        else if (angleDiff < -turnRate)
+            p.angle -= turnRate;
+        else
+            p.angle = targetAngle;
+
+        p.x += Math.cos(p.angle) * currentSpeed;
+        p.y += Math.sin(p.angle) * currentSpeed;
+
+    } else {
+        p.targetX = null;
+        p.targetY = null;
+    }
+}
         handleIslandCollisions(p);
 
         for (let i = resources.length - 1; i >= 0; i--) {
